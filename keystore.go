@@ -4,14 +4,20 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/colligence-io/signServer/trustSigner"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 )
 
-/* KeyID - BlockChainType - WhiteBox map */
-var keyStore map[string]map[trustSigner.BlockChainType]*trustSigner.WhiteBox
+type addressAndWhiteBox struct {
+	Address  string
+	WhiteBox *trustSigner.WhiteBox
+}
+
+/* KeyID - BlockChainType - addressAndWhiteBox map */
+var keyStore map[string]map[trustSigner.BlockChainType]addressAndWhiteBox
 
 func openDB() *sql.DB {
 	db, err := sql.Open("sqlite3", "./.keyStore")
@@ -27,7 +33,7 @@ func openDB() *sql.DB {
 func initKeyStore() {
 	log.Println("Initialize WhiteBox KeyStore")
 
-	keyStore = make(map[string]map[trustSigner.BlockChainType]*trustSigner.WhiteBox)
+	keyStore = make(map[string]map[trustSigner.BlockChainType]addressAndWhiteBox)
 
 	db := openDB()
 	defer closeOrDie(db)
@@ -46,7 +52,7 @@ func initKeyStore() {
 
 		wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
-		keyStore[keyID] = make(map[trustSigner.BlockChainType]*trustSigner.WhiteBox)
+		keyStore[keyID] = make(map[trustSigner.BlockChainType]addressAndWhiteBox)
 
 		log.Printf("%s : %s\n", appID, keyID)
 
@@ -57,7 +63,7 @@ func initKeyStore() {
 			address, err := trustSigner.DeriveAddress(bcType, key)
 			checkAndDie(err)
 
-			keyStore[keyID][bcType] = wb
+			keyStore[keyID][bcType] = addressAndWhiteBox{address, wb}
 
 			log.Printf(" %s : %s\n", string(bcType), address)
 		}
@@ -66,7 +72,7 @@ func initKeyStore() {
 
 func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSigner.WhiteBox, error) {
 	if wbData, found := keyStore[keyID][bcType]; found {
-		return wbData, nil
+		return wbData.WhiteBox, nil
 	} else {
 		return nil, fmt.Errorf("%s %s not found on keyStore", string(bcType), keyID)
 	}
@@ -136,4 +142,23 @@ func printBlockChainData(appID string, id string, wb *trustSigner.WhiteBox) {
 
 		fmt.Printf("   Address :  %s\n", address)
 	}
+}
+
+func printVaultConfig() {
+	initKeyStore()
+
+	var result map[string]string
+	result = make(map[string]string)
+
+	for keyID, map2 := range keyStore {
+		for bcType, anwb := range map2 {
+			result[string(bcType)+":"+anwb.Address] = keyID
+		}
+	}
+
+	rb, err := json.MarshalIndent(result, "", "  ")
+	checkAndDie(err)
+
+	fmt.Println("VaultConfig data")
+	fmt.Printf("\"signserver\": %s", string(rb))
 }

@@ -41,6 +41,8 @@ func main() {
 		}
 
 		inspectWhiteBoxData(os.Args[2])
+	case "kpvaultconfig":
+		printVaultConfig()
 	default:
 		usage()
 	}
