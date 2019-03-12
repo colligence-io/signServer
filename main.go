@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"strconv"
 )
@@ -57,14 +55,4 @@ func usage() {
 	fmt.Printf(" kpshow mode : %s kpshow [kpID]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
 	os.Exit(-1)
-}
-
-func closeOrDie(entity io.Closer) {
-	checkAndDie(entity.Close())
-}
-
-func checkAndDie(err error) {
-	if err != nil {
-		log.Fatalln(err)
-	}
 }
