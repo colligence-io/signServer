@@ -9,9 +9,10 @@ import (
 
 func signHandler(req *http.Request) rr.ResponseEntity {
 	var request struct {
-		Type      trustSigner.BlockChainType `json:"type"`
-		PublicKey string                     `json:"publicKey"`
-		Data      string                     `json:"data"`
+		KeyID   string                     `json:"keyID"`
+		Type    trustSigner.BlockChainType `json:"type"`
+		Address string                     `json:"address"`
+		Data    string                     `json:"data"`
 	}
 
 	var response struct {
@@ -28,7 +29,7 @@ func signHandler(req *http.Request) rr.ResponseEntity {
 		return rr.ErrorResponse(err)
 	}
 
-	wb, err := getWhiteBoxData(request.Type, request.PublicKey)
+	wb, err := getWhiteBoxData(request.KeyID, request.Type)
 
 	if err != nil {
 		return rr.ErrorResponse(err)

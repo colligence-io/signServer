@@ -5,17 +5,13 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"github.com/colligence-io/signServer/hd"
 	"github.com/colligence-io/signServer/trustSigner"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 )
 
-/* appID - WhiteBox map */
-var wbStore map[string]*trustSigner.WhiteBox
-
-/* BCType - PublicKey - WhiteBox map */
-var keyStore map[trustSigner.BlockChainType]map[string]*trustSigner.WhiteBox
+/* KeyID - BlockChainType - WhiteBox map */
+var keyStore map[string]map[trustSigner.BlockChainType]*trustSigner.WhiteBox
 
 func openDB() *sql.DB {
 	db, err := sql.Open("sqlite3", "./.keyStore")
@@ -31,12 +27,7 @@ func openDB() *sql.DB {
 func initKeyStore() {
 	log.Println("Initialize WhiteBox KeyStore")
 
-	wbStore = make(map[string]*trustSigner.WhiteBox)
-	keyStore = make(map[trustSigner.BlockChainType]map[string]*trustSigner.WhiteBox)
-
-	for _, v := range trustSigner.BCTypes {
-		keyStore[v] = make(map[string]*trustSigner.WhiteBox)
-	}
+	keyStore = make(map[string]map[trustSigner.BlockChainType]*trustSigner.WhiteBox)
 
 	db := openDB()
 	defer closeOrDie(db)
@@ -46,38 +37,38 @@ func initKeyStore() {
 	checkAndDie(err)
 
 	for rows.Next() {
-		var id string
+		var keyID string
 		var appID string
 		var wbBytes []byte
 
-		err = rows.Scan(&id, &appID, &wbBytes)
+		err = rows.Scan(&keyID, &appID, &wbBytes)
 		checkAndDie(err)
 
 		wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
-		wbStore[appID] = wb
+		keyStore[keyID] = make(map[trustSigner.BlockChainType]*trustSigner.WhiteBox)
 
-		log.Printf("%s : %s\n", appID, id)
+		log.Printf("%s : %s\n", appID, keyID)
 
 		for _, bcType := range trustSigner.BCTypes {
 			key := trustSigner.GetWBPublicKey(wb, bcType)
 			checkAndDie(err)
 
-			address, err := deriveAddress(key, bcType)
+			address, err := trustSigner.DeriveAddress(bcType, key)
 			checkAndDie(err)
 
-			keyStore[bcType][address] = wb
+			keyStore[keyID][bcType] = wb
 
 			log.Printf(" %s : %s\n", string(bcType), address)
 		}
 	}
 }
 
-func getWhiteBoxData(bcType trustSigner.BlockChainType, publicKey string) (*trustSigner.WhiteBox, error) {
-	if wbData, found := keyStore[bcType][publicKey]; found {
+func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSigner.WhiteBox, error) {
+	if wbData, found := keyStore[keyID][bcType]; found {
 		return wbData, nil
 	} else {
-		return nil, fmt.Errorf("%s publicKey %s not found on keyStore", string(bcType), publicKey)
+		return nil, fmt.Errorf("%s %s not found on keyStore", string(bcType), keyID)
 	}
 }
 
@@ -140,30 +131,9 @@ func printBlockChainData(appID string, id string, wb *trustSigner.WhiteBox) {
 		fmt.Printf(" - %s\n", string(bcType))
 		fmt.Printf("   PublicKey : %s\n", key)
 
-		address, err := deriveAddress(key, bcType)
+		address, err := trustSigner.DeriveAddress(bcType, key)
 		checkAndDie(err)
 
 		fmt.Printf("   Address :  %s\n", address)
-	}
-}
-
-func deriveAddress(publicKey string, bcType trustSigner.BlockChainType) (string, error) {
-	switch bcType {
-	case trustSigner.BTC:
-		wallet, err := hd.FromBIP32ExtendedKey(publicKey)
-		if err != nil {
-			return "", err
-		}
-		return wallet.DeriveBTCAddress()
-	case trustSigner.ETH:
-		wallet, err := hd.FromBIP32ExtendedKey(publicKey)
-		if err != nil {
-			return "", err
-		}
-		return wallet.DeriveETHAddress()
-	case trustSigner.XLM:
-		return publicKey, nil
-	default:
-		return "", fmt.Errorf("cannot generate %s publicKey", string(bcType))
 	}
 }
