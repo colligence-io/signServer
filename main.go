@@ -49,12 +49,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Printf("%s [server|kpgen|kpshow] [option]\n", os.Args[0])
+	fmt.Printf("%s [server|kpgen|kpshow|kpvaultconfig] [option]\n", os.Args[0])
 	fmt.Printf(" server mode : %s server [port]\n", os.Args[0])
 	fmt.Printf("    port : default 3456\n")
-	fmt.Printf(" kpgen mode : %s kpgen [kpID]\n", os.Args[0])
+	fmt.Printf(" keypair generate mode : %s kpgen [kpID]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
-	fmt.Printf(" kpshow mode : %s kpshow [kpID]\n", os.Args[0])
+	fmt.Printf(" keypair show mode : %s kpshow [kpID]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
+	fmt.Printf(" vaultConfig generate mode : %s kpvaultconfig\n", os.Args[0])
 	os.Exit(-1)
 }
