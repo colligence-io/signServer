@@ -8,10 +8,11 @@ package trustSigner
 */
 import "C"
 import (
+	"bytes"
 	"unsafe"
 )
 
-const wbLength int = 1275881
+const wbLength int = 1275881 + 80
 
 type BlockChainType string
 
@@ -35,12 +36,12 @@ type blockChainDefinition struct {
 
 var BCDefs = map[BlockChainType]blockChainDefinition{
 	BTC: {
-		PublicKeyLength: 34,
+		PublicKeyLength: 111,
 		SignatureLength: 65,
 		HDDepth:         5,
 	},
 	ETH: {
-		PublicKeyLength: 20,
+		PublicKeyLength: 111,
 		SignatureLength: 65,
 		HDDepth:         5,
 	},
@@ -74,13 +75,10 @@ func GetWBInitializeData(appId string) []byte {
 	return wbData
 }
 
-func ConvertToWhiteBox(appID string, wbBytes *[]byte) *WhiteBox {
-
-	var bufptr *byte
-	if cap(*wbBytes) > 0 {
-		bufptr = &((*wbBytes)[:1][0])
-	}
-	return &WhiteBox{appID, C.int(C.size_t(len(*wbBytes))), (*C.uchar)(bufptr)}
+func ConvertToWhiteBox(appID string, wbBytes []byte) *WhiteBox {
+	var buf bytes.Buffer
+	buf.Write(wbBytes)
+	return &WhiteBox{appID, C.int(C.size_t(len(wbBytes))), (*C.uchar)(unsafe.Pointer(&buf.Bytes()[0]))}
 }
 
 //char *TrustSigner_getWBPublicKey(char *app_id, unsigned char *wb_data, int wb_data_len, char *coin_symbol, int hd_depth, int hd_change, int hd_index);

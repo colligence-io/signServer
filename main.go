@@ -37,16 +37,24 @@ func main() {
 		}
 
 		generateKeypair(os.Args[2])
+	case "kpshow":
+		if len(os.Args) < 3 {
+			usage()
+		}
+
+		inspectWhiteBoxData(os.Args[2])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Printf("%s [server|kpgen] [option]\n", os.Args[0])
+	fmt.Printf("%s [server|kpgen|kpshow] [option]\n", os.Args[0])
 	fmt.Printf(" server mode : %s server [port]\n", os.Args[0])
 	fmt.Printf("    port : default 3456\n")
 	fmt.Printf(" kpgen mode : %s kpgen [kpID]\n", os.Args[0])
+	fmt.Printf("    kpID : keypair ID\n")
+	fmt.Printf(" kpshow mode : %s kpshow [kpID]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
 	os.Exit(-1)
 }
