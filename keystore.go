@@ -24,7 +24,7 @@ func initKeyStore() {
 	keyStore = make(map[string]keyPair)
 
 	vks = connectVault()
-	vks.startAutoRenew()
+	//vks.startAutoRenew()
 
 	ksList, e := vks.client.Logical().List("bcks")
 	checkAndDie(e)
