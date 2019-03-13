@@ -5,8 +5,10 @@ go 1.12
 require (
 	github.com/btcsuite/btcd v0.0.0-20190213025234-306aecffea32
 	github.com/btcsuite/btcutil v0.0.0-20190207003914-4c204d697803
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/ethereum/go-ethereum v1.8.23
 	github.com/go-chi/chi v4.0.2+incompatible
+	github.com/go-chi/jwtauth v3.3.0+incompatible
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.5.2 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.0 // indirect

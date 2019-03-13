@@ -61,7 +61,7 @@ func initKeyStore() {
 		}
 
 		keyStore[keyID] = keyPair{
-			bcType:   trustSigner.BTC,
+			bcType:   bcType,
 			address:  derivedAddress,
 			whiteBox: wb,
 		}

@@ -7,36 +7,26 @@ import (
 	"time"
 )
 
-type vaultConfig struct {
-	username string
-	password string
-	address  string
-}
-
 type vaultConnection struct {
 	client *vault.Client
 }
 
 func connectVault() (vc *vaultConnection) {
-	vaultConfig := vaultConfig{
-		username: "signserver",
-		password: "ss1234",
-		address:  "http://127.0.0.1:8200",
-	}
+	vaultConfig := serverConfig.Vault
 
 	client, e := vault.NewClient(&vault.Config{
-		Address: vaultConfig.address,
+		Address: vaultConfig.Address,
 	})
 	checkAndDie(e)
-	log.Println("Connected to vault :", vaultConfig.address)
+	log.Println("Connected to vault :", vaultConfig.Address)
 
-	password := map[string]interface{}{"password": vaultConfig.password}
+	password := map[string]interface{}{"password": vaultConfig.Password}
 
-	userpassAuth, e := client.Logical().Write("auth/userpass/login/"+vaultConfig.username, password)
+	userpassAuth, e := client.Logical().Write("auth/userpass/login/"+vaultConfig.Username, password)
 	checkAndDie(e)
 
 	client.SetToken(userpassAuth.Auth.ClientToken)
-	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vaultConfig.username + "/role-id")
+	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vaultConfig.Username + "/role-id")
 	checkAndDie(e)
 
 	roleID, found := roleIDsecret.Data["role_id"]
@@ -44,7 +34,7 @@ func connectVault() (vc *vaultConnection) {
 		checkAndDie(errors.New("role id check failed"))
 	}
 
-	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vaultConfig.username+"/secret-id", nil)
+	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vaultConfig.Username+"/secret-id", nil)
 	checkAndDie(e)
 
 	secretID, found := secretIDsecret.Data["secret_id"]

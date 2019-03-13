@@ -5,13 +5,22 @@ import (
 	"github.com/colligence-io/signServer/rr"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/jwtauth"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
 )
 
+var tokenAuth *jwtauth.JWTAuth
+
+func initJwt() {
+	tokenAuth = jwtauth.New("HS256", []byte("secret"), nil)
+}
+
 func launchServer(port int) {
+	initJwt()
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
