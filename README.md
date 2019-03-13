@@ -1,8 +1,7 @@
 # signServer
 
-Vault Config
-<pre><code>
-vault secrets enable -path=bcks kv
+### Vault Config
+<pre><code>vault secrets enable -path=bcks kv
 
 vault policy write signserver-bcks-policy -&lt&ltEOF
 path "bcks/*" {
@@ -21,5 +20,23 @@ path "auth/approle/role/signserver/secret-id" {
 }
 EOF
 
-vault write auth/userpass/users/signserver password=ss1234 policies=signserver-keygen-policy ttl="5s" max_ttl="5s"
-</code></pre>
+vault write auth/userpass/users/signserver password=ss1234 policies=signserver-keygen-policy ttl="5s" max_ttl="5s"</code></pre>
+
+
+### Server Initialize
+1. create config.json
+    <pre><code>config.json
+    
+    {
+      "auth": {
+        "jwtSecret": "secret"
+      },
+      "vault": {
+        "username": "signserver",
+        "password": "ss1234",
+        "address": "http://127.0.0.1:8200"
+      }
+    }</code></pre>
+2. run signServer
+3. enter initial launching key
+4. remove config.json.REMOVE
