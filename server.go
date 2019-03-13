@@ -1,5 +1,6 @@
 package main
 
+import "C"
 import (
 	"github.com/colligence-io/signServer/rr"
 	"github.com/go-chi/chi"
@@ -26,6 +27,15 @@ func launchServer(port int) {
 	r.Post("/sign", rr.WrapHandler(signHandler))
 	r.Get("/reload", rr.WrapHandler(reloadHandler))
 
+	initKeyStore()
+	logKeyStore()
+
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
 	checkAndDie(err)
+}
+
+func logKeyStore() {
+	for keyID, kp := range keyStore {
+		log.Println("KeyPair", C.GoString((*C.char)(kp.WhiteBox.AppID)), ":", keyID, kp.BcType, kp.Address)
+	}
 }

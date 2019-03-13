@@ -8,22 +8,22 @@ import (
 	"fmt"
 	"github.com/colligence-io/signServer/trustSigner"
 	_ "github.com/mattn/go-sqlite3"
-	"log"
 )
 
-type addressAndWhiteBox struct {
+type keyPair struct {
+	BcType   trustSigner.BlockChainType
 	Address  string
 	WhiteBox *trustSigner.WhiteBox
 }
 
-/* KeyID - BlockChainType - addressAndWhiteBox map */
-var keyStore map[string]map[trustSigner.BlockChainType]addressAndWhiteBox
+/* KeyID - keyPair map */
+var keyStore map[string]keyPair
 
 func openDB() *sql.DB {
 	db, err := sql.Open("sqlite3", "./.keyStore")
 	checkAndDie(err)
 
-	ddl := `create table if not exists kp (id char(64) not null primary key, appID varchar(128) not null, wbData blob not null);`
+	ddl := `create table if not exists kp (id char(64) not null primary key, appID varchar(128) not null, bcType varchar(12) not null, address varchar(128) not null, wbData blob not null);`
 	_, err = db.Exec(ddl)
 	checkAndDie(err)
 
@@ -31,47 +31,52 @@ func openDB() *sql.DB {
 }
 
 func initKeyStore() {
-	log.Println("Initialize WhiteBox KeyStore")
-
-	keyStore = make(map[string]map[trustSigner.BlockChainType]addressAndWhiteBox)
+	keyStore = make(map[string]keyPair)
 
 	db := openDB()
 	defer closeOrDie(db)
 
-	rows, err := db.Query("select id, appID, wbData from kp;")
+	rows, err := db.Query("select id, appID, bcType, address, wbData from kp;")
 	defer closeOrDie(rows)
 	checkAndDie(err)
 
 	for rows.Next() {
 		var keyID string
 		var appID string
+		var symbol string
+		var address string
 		var wbBytes []byte
 
-		err = rows.Scan(&keyID, &appID, &wbBytes)
+		err = rows.Scan(&keyID, &appID, &symbol, &address, &wbBytes)
 		checkAndDie(err)
+
+		bcType, found := trustSigner.BCTypes[symbol]
+		if !found {
+			checkAndDie(fmt.Errorf("cannot load keypair %s : BlockChainType %s is invalid", appID, symbol))
+		}
 
 		wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
-		keyStore[keyID] = make(map[trustSigner.BlockChainType]addressAndWhiteBox)
+		publicKey := trustSigner.GetWBPublicKey(wb, bcType)
+		checkAndDie(err)
 
-		log.Printf("%s : %s\n", appID, keyID)
+		derivedAddress, err := trustSigner.DeriveAddress(bcType, publicKey)
+		checkAndDie(err)
 
-		for _, bcType := range trustSigner.BCTypes {
-			key := trustSigner.GetWBPublicKey(wb, bcType)
-			checkAndDie(err)
+		if derivedAddress != address {
+			checkAndDie(fmt.Errorf("cannot load keypair %s : address verification failed %s != %s", appID, address, derivedAddress))
+		}
 
-			address, err := trustSigner.DeriveAddress(bcType, key)
-			checkAndDie(err)
-
-			keyStore[keyID][bcType] = addressAndWhiteBox{address, wb}
-
-			log.Printf(" %s : %s\n", string(bcType), address)
+		keyStore[keyID] = keyPair{
+			BcType:   trustSigner.BTC,
+			Address:  derivedAddress,
+			WhiteBox: wb,
 		}
 	}
 }
 
 func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSigner.WhiteBox, error) {
-	if wbData, found := keyStore[keyID][bcType]; found {
+	if wbData, found := keyStore[keyID]; found && wbData.BcType == bcType {
 		return wbData.WhiteBox, nil
 	} else {
 		return nil, fmt.Errorf("%s %s not found on keyStore", string(bcType), keyID)
@@ -81,7 +86,13 @@ func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSig
 /*
 KEYPAIR GENERATION
 */
-func generateKeypair(appID string) {
+func generateKeypair(appID string, symbol string) {
+	bcType, found := trustSigner.BCTypes[symbol]
+	if !found {
+		fmt.Println("blockchain type not supported :", symbol)
+		return
+	}
+
 	db := openDB()
 	defer closeOrDie(db)
 
@@ -90,58 +101,54 @@ func generateKeypair(appID string) {
 
 	wbBytes := trustSigner.GetWBInitializeData(appID)
 
+	wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
+
+	key := trustSigner.GetWBPublicKey(wb, bcType)
+
+	address, err := trustSigner.DeriveAddress(bcType, key)
+	checkAndDie(err)
+
 	hash := sha256.New()
 	hash.Write([]byte(appID))
-	dataID := hex.EncodeToString(hash.Sum(nil))
+	keyID := hex.EncodeToString(hash.Sum(nil))
 
-	stmt, err := tx.Prepare("insert into kp (id, appID, wbData) values (?,?,?)")
+	stmt, err := tx.Prepare("insert into kp (id, appID, bcType, address, wbData) values (?,?,?,?,?)")
 	defer closeOrDie(stmt)
 	checkAndDie(err)
 
-	_, err = stmt.Exec(dataID, appID, &wbBytes)
+	_, err = stmt.Exec(keyID, appID, string(bcType), address, &wbBytes)
 	checkAndDie(err)
 
 	err = tx.Commit()
 	checkAndDie(err)
 
-	wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
-
-	printBlockChainData(appID, dataID, wb)
+	fmt.Println("Whitebox Keypair Generated")
+	fmt.Println("AppID :", appID)
+	fmt.Println("KeyID :", keyID)
+	fmt.Println("BlockChainType :", string(bcType))
+	fmt.Println("Address :", address)
 }
 
-func inspectWhiteBoxData(appID string) {
+func showKeypairInfo(appID string) {
 	db := openDB()
 	defer closeOrDie(db)
 
-	stmt, err := db.Prepare("select id, wbData from kp where appID = ?")
+	stmt, err := db.Prepare("select id, bcType, address from kp where appID = ?")
 	defer closeOrDie(stmt)
 	checkAndDie(err)
 
-	var id string
-	var wbBytes []byte
+	var keyID string
+	var symbol string
+	var address string
 
-	err = stmt.QueryRow(appID).Scan(&id, &wbBytes)
+	err = stmt.QueryRow(appID).Scan(&keyID, &symbol, &address)
 	checkAndDie(err)
 
-	wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
-
-	printBlockChainData(appID, id, wb)
-}
-
-func printBlockChainData(appID string, id string, wb *trustSigner.WhiteBox) {
-	fmt.Printf("AppID : %s\n", appID)
-	fmt.Printf("ID : %s\n", id)
-
-	for _, bcType := range trustSigner.BCTypes {
-		key := trustSigner.GetWBPublicKey(wb, bcType)
-		fmt.Printf(" - %s\n", string(bcType))
-		fmt.Printf("   PublicKey : %s\n", key)
-
-		address, err := trustSigner.DeriveAddress(bcType, key)
-		checkAndDie(err)
-
-		fmt.Printf("   Address :  %s\n", address)
-	}
+	fmt.Println("Whitebox Keypair Information")
+	fmt.Println("AppID :", appID)
+	fmt.Println("KeyID :", keyID)
+	fmt.Println("BlockChainType :", symbol)
+	fmt.Println("Address :", address)
 }
 
 func printVaultConfig() {
@@ -150,10 +157,8 @@ func printVaultConfig() {
 	var result map[string]string
 	result = make(map[string]string)
 
-	for keyID, map2 := range keyStore {
-		for bcType, anwb := range map2 {
-			result[string(bcType)+":"+anwb.Address] = keyID
-		}
+	for keyID, kp := range keyStore {
+		result[string(kp.BcType)+":"+kp.Address] = keyID
 	}
 
 	rb, err := json.MarshalIndent(result, "", "  ")
