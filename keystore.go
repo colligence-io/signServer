@@ -2,53 +2,44 @@ package main
 
 import (
 	"crypto/sha256"
-	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/colligence-io/signServer/trustSigner"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type keyPair struct {
-	BcType   trustSigner.BlockChainType
-	Address  string
-	WhiteBox *trustSigner.WhiteBox
+	bcType   trustSigner.BlockChainType
+	address  string
+	whiteBox *trustSigner.WhiteBox
 }
 
 /* KeyID - keyPair map */
 var keyStore map[string]keyPair
 
-func openDB() *sql.DB {
-	db, err := sql.Open("sqlite3", "./.keyStore")
-	checkAndDie(err)
-
-	ddl := `create table if not exists kp (id char(64) not null primary key, appID varchar(128) not null, bcType varchar(12) not null, address varchar(128) not null, wbData blob not null);`
-	_, err = db.Exec(ddl)
-	checkAndDie(err)
-
-	return db
-}
+var vks *vaultConnection
 
 func initKeyStore() {
 	keyStore = make(map[string]keyPair)
 
-	db := openDB()
-	defer closeOrDie(db)
+	vks = connectVault()
+	vks.startAutoRenew()
 
-	rows, err := db.Query("select id, appID, bcType, address, wbData from kp;")
-	defer closeOrDie(rows)
-	checkAndDie(err)
+	ksList, e := vks.client.Logical().List("bcks")
+	checkAndDie(e)
 
-	for rows.Next() {
-		var keyID string
-		var appID string
-		var symbol string
-		var address string
-		var wbBytes []byte
+	for _, ik := range ksList.Data["keys"].([]interface{}) {
+		keyID := ik.(string)
 
-		err = rows.Scan(&keyID, &appID, &symbol, &address, &wbBytes)
-		checkAndDie(err)
+		secret, e := vks.client.Logical().Read("bcks/" + keyID)
+		checkAndDie(e)
+
+		appID := secret.Data["appID"].(string)
+		symbol := secret.Data["symbol"].(string)
+		address := secret.Data["address"].(string)
+		wbBytes, e := base64.StdEncoding.DecodeString(secret.Data["wb"].(string))
+		checkAndDie(e)
 
 		bcType, found := trustSigner.BCTypes[symbol]
 		if !found {
@@ -58,7 +49,9 @@ func initKeyStore() {
 		wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
 		publicKey := trustSigner.GetWBPublicKey(wb, bcType)
-		checkAndDie(err)
+		if publicKey == "" {
+			checkAndDie(fmt.Errorf("cannot load keypair %s : empty publicKey", appID))
+		}
 
 		derivedAddress, err := trustSigner.DeriveAddress(bcType, publicKey)
 		checkAndDie(err)
@@ -68,16 +61,16 @@ func initKeyStore() {
 		}
 
 		keyStore[keyID] = keyPair{
-			BcType:   trustSigner.BTC,
-			Address:  derivedAddress,
-			WhiteBox: wb,
+			bcType:   trustSigner.BTC,
+			address:  derivedAddress,
+			whiteBox: wb,
 		}
 	}
 }
 
 func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSigner.WhiteBox, error) {
-	if wbData, found := keyStore[keyID]; found && wbData.BcType == bcType {
-		return wbData.WhiteBox, nil
+	if wbData, found := keyStore[keyID]; found && wbData.bcType == bcType {
+		return wbData.whiteBox, nil
 	} else {
 		return nil, fmt.Errorf("%s %s not found on keyStore", string(bcType), keyID)
 	}
@@ -87,17 +80,13 @@ func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSig
 KEYPAIR GENERATION
 */
 func generateKeypair(appID string, symbol string) {
+	vc := connectVault()
+
 	bcType, found := trustSigner.BCTypes[symbol]
 	if !found {
 		fmt.Println("blockchain type not supported :", symbol)
 		return
 	}
-
-	db := openDB()
-	defer closeOrDie(db)
-
-	tx, err := db.Begin()
-	checkAndDie(err)
 
 	wbBytes := trustSigner.GetWBInitializeData(appID)
 
@@ -105,22 +94,20 @@ func generateKeypair(appID string, symbol string) {
 
 	key := trustSigner.GetWBPublicKey(wb, bcType)
 
-	address, err := trustSigner.DeriveAddress(bcType, key)
-	checkAndDie(err)
+	address, e := trustSigner.DeriveAddress(bcType, key)
+	checkAndDie(e)
 
-	hash := sha256.New()
-	hash.Write([]byte(appID))
-	keyID := hex.EncodeToString(hash.Sum(nil))
+	keyID := appIDtoKeyID(appID)
 
-	stmt, err := tx.Prepare("insert into kp (id, appID, bcType, address, wbData) values (?,?,?,?,?)")
-	defer closeOrDie(stmt)
-	checkAndDie(err)
-
-	_, err = stmt.Exec(keyID, appID, string(bcType), address, &wbBytes)
-	checkAndDie(err)
-
-	err = tx.Commit()
-	checkAndDie(err)
+	vaultData := map[string]interface{}{
+		"keyID":   keyID,
+		"appID":   appID,
+		"symbol":  symbol,
+		"address": address,
+		"wb":      base64.StdEncoding.EncodeToString(wbBytes),
+	}
+	_, e = vc.client.Logical().Write("bcks/"+keyID, vaultData)
+	checkAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
 	fmt.Println("AppID :", appID)
@@ -129,20 +116,22 @@ func generateKeypair(appID string, symbol string) {
 	fmt.Println("Address :", address)
 }
 
+func appIDtoKeyID(appID string) string {
+	hash := sha256.New()
+	hash.Write([]byte(appID))
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
 func showKeypairInfo(appID string) {
-	db := openDB()
-	defer closeOrDie(db)
+	vc := connectVault()
 
-	stmt, err := db.Prepare("select id, bcType, address from kp where appID = ?")
-	defer closeOrDie(stmt)
-	checkAndDie(err)
+	keyID := appIDtoKeyID(appID)
 
-	var keyID string
-	var symbol string
-	var address string
+	secret, e := vc.client.Logical().Read("bcks/" + keyID)
+	checkAndDie(e)
 
-	err = stmt.QueryRow(appID).Scan(&keyID, &symbol, &address)
-	checkAndDie(err)
+	symbol := secret.Data["symbol"].(string)
+	address := secret.Data["address"].(string)
 
 	fmt.Println("Whitebox Keypair Information")
 	fmt.Println("AppID :", appID)
@@ -158,7 +147,7 @@ func printVaultConfig() {
 	result = make(map[string]string)
 
 	for keyID, kp := range keyStore {
-		result[string(kp.BcType)+":"+kp.Address] = keyID
+		result[string(kp.bcType)+":"+kp.address] = keyID
 	}
 
 	rb, err := json.MarshalIndent(result, "", "  ")

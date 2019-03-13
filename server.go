@@ -22,20 +22,19 @@ func launchServer(port int) {
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(middleware.SetHeader("Content-type", "application/json; charset=utf8"))
 
-	log.Printf("SignServer started : listen %d", port)
-
 	r.Post("/sign", rr.WrapHandler(signHandler))
 	r.Get("/reload", rr.WrapHandler(reloadHandler))
 
 	initKeyStore()
 	logKeyStore()
 
+	log.Printf("SignServer started : listen %d", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
 	checkAndDie(err)
 }
 
 func logKeyStore() {
 	for keyID, kp := range keyStore {
-		log.Println("KeyPair", C.GoString((*C.char)(kp.WhiteBox.AppID)), ":", keyID, kp.BcType, kp.Address)
+		log.Println("KeyPair", C.GoString((*C.char)(kp.whiteBox.AppID)), ":", keyID, kp.bcType, kp.address)
 	}
 }
