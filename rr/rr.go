@@ -17,6 +17,10 @@ type ResponseEntity struct {
 	Data    interface{} `json:"data"`
 }
 
+var UnauthorizedResponse = KoResponse(http.StatusUnauthorized, "I don't know who you are")
+
+var InternalServerErrorResponse = KoResponse(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+
 func ErrorResponse(err error) ResponseEntity {
 	return KoResponse(http.StatusInternalServerError, err.Error())
 }
@@ -32,30 +36,22 @@ func OkResponse(data interface{}) ResponseEntity {
 	return ResponseEntity{Code: http.StatusOK, Message: "OK", Data: data}
 }
 
-/*
-Response Handler
-*/
-type RequestHandler func(req *http.Request) ResponseEntity
+func WriteResponseEntity(rw http.ResponseWriter, entity ResponseEntity) {
+	resBytes, err := json.Marshal(entity)
+	if err != nil {
+		http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		log.Println("cannot marshal data")
+		return
+	}
 
-func WrapHandler(handler RequestHandler) http.HandlerFunc {
-	return func(rw http.ResponseWriter, req *http.Request) {
-		res := handler(req)
-		resBytes, err := json.Marshal(res)
-		if err != nil {
-			http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			log.Println("cannot marshal data")
-			return
-		}
+	rw.WriteHeader(entity.Code)
 
-		rw.WriteHeader(res.Code)
-
-		if _, err := rw.Write(resBytes); err != nil {
-			log.Println("cannot write to response")
-		}
+	if _, err := rw.Write(resBytes); err != nil {
+		log.Println("cannot write to response")
 	}
 }
 
-func ParseRequestBody(req *http.Request, body interface{}) error {
+func ReadRequestBody(req *http.Request, body interface{}) error {
 	bytes, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		return err

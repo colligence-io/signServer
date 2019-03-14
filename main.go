@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -21,16 +20,24 @@ type ServerConfig struct {
 }
 
 type AuthConfig struct {
-	JwtSecret string `json:"jwtSecret"`
+	JwtSecret       string `json:"jwtSecret"`
+	JwtSecretKey    []byte
+	JwtExpires      int `json:"jwtExpires"`
+	QuestionExpires int `json:"questionExpires"`
 }
 
 type VaultConfig struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Address  string `json:"address"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	Address          string `json:"address"`
+	WhiteBoxPath     string `json:"whiteboxPath"`
+	AuthPath         string `json:"authPath"`
+	SecretKeymapPath string `json:"secretKeymapPath"`
 }
 
 var serverConfig = &ServerConfig{}
+
+var vks *vaultConnection
 
 func main() {
 	var mode string
@@ -55,35 +62,44 @@ func main() {
 		} else {
 			port = 3456
 		}
+		vks = connectVault()
+		vks.startAutoRenew()
 		launchServer(port)
 	case "kpgen":
 		if len(os.Args) < 4 {
 			usage()
 		}
-
+		vks = connectVault()
 		generateKeypair(os.Args[2], os.Args[3])
 	case "kpshow":
 		if len(os.Args) < 3 {
 			usage()
 		}
-
+		vks = connectVault()
 		showKeypairInfo(os.Args[2])
-	case "kpvaultconfig":
-		printVaultConfig()
+	case "addapp":
+		if len(os.Args) < 4 {
+			usage()
+		}
+		vks = connectVault()
+		addAppAuth(os.Args[2], os.Args[3])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Printf("%s [server|kpgen|kpshow|kpvaultconfig] [option]\n", os.Args[0])
+	fmt.Printf("%s [server|kpgen|kpshow|addapp] [option]\n", os.Args[0])
 	fmt.Printf(" server mode : %s server [port]\n", os.Args[0])
 	fmt.Printf("    port : default 3456\n")
 	fmt.Printf(" keypair generate mode : %s kpgen [kpID] [symbol]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
+	fmt.Printf("    symbol : Blockchain symbol\n")
 	fmt.Printf(" keypair show mode : %s kpshow [kpID]\n", os.Args[0])
 	fmt.Printf("    kpID : keypair ID\n")
-	fmt.Printf(" vaultConfig generate mode : %s kpvaultconfig\n", os.Args[0])
+	fmt.Printf(" add application mode : %s addapp [appid] [cidr]\n", os.Args[0])
+	fmt.Printf("    appid : application ID\n")
+	fmt.Printf("    cidr : application bind CIDR\n")
 	os.Exit(-1)
 }
 
@@ -136,9 +152,5 @@ func getLaunchingKey() []byte {
 	scanner.Scan()
 	key := scanner.Text()
 
-	hash := sha256.New()
-	hash.Write([]byte(key))
-	sum := hash.Sum(nil)
-
-	return sum
+	return sha256Hash(key)
 }

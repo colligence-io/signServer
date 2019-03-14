@@ -4,10 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 )
 
@@ -76,7 +78,25 @@ func decrypt(key []byte, cipherText []byte) ([]byte, error) {
 	return cipherText, nil
 }
 
+func sha256Hash(appID string) []byte {
+	hash := sha256.New()
+	hash.Write([]byte(appID))
+	return hash.Sum(nil)
+}
+
 func fileExists(name string) bool {
 	_, err := os.Stat(name)
 	return !os.IsNotExist(err)
+}
+
+func getIP(addr string) net.IP {
+	host, _, e := net.SplitHostPort(addr)
+	if e != nil {
+		return nil
+	}
+	if host != "" {
+		return net.ParseIP(host)
+	} else {
+		return net.ParseIP(addr)
+	}
 }

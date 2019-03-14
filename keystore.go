@@ -1,12 +1,12 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"github.com/colligence-io/signServer/trustSigner"
+	stellarkp "github.com/stellar/go/keypair"
+	"net"
 )
 
 type keyPair struct {
@@ -18,21 +18,16 @@ type keyPair struct {
 /* KeyID - keyPair map */
 var keyStore map[string]keyPair
 
-var vks *vaultConnection
-
 func initKeyStore() {
 	keyStore = make(map[string]keyPair)
 
-	vks = connectVault()
-	//vks.startAutoRenew()
-
-	ksList, e := vks.client.Logical().List("bcks")
+	ksList, e := vks.client.Logical().List(serverConfig.Vault.WhiteBoxPath)
 	checkAndDie(e)
 
 	for _, ik := range ksList.Data["keys"].([]interface{}) {
 		keyID := ik.(string)
 
-		secret, e := vks.client.Logical().Read("bcks/" + keyID)
+		secret, e := vks.client.Logical().Read(serverConfig.Vault.WhiteBoxPath + "/" + keyID)
 		checkAndDie(e)
 
 		appID := secret.Data["appID"].(string)
@@ -68,11 +63,11 @@ func initKeyStore() {
 	}
 }
 
-func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSigner.WhiteBox, error) {
+func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) *trustSigner.WhiteBox {
 	if wbData, found := keyStore[keyID]; found && wbData.bcType == bcType {
-		return wbData.whiteBox, nil
+		return wbData.whiteBox
 	} else {
-		return nil, fmt.Errorf("%s %s not found on keyStore", string(bcType), keyID)
+		return nil
 	}
 }
 
@@ -80,8 +75,6 @@ func getWhiteBoxData(keyID string, bcType trustSigner.BlockChainType) (*trustSig
 KEYPAIR GENERATION
 */
 func generateKeypair(appID string, symbol string) {
-	vc := connectVault()
-
 	bcType, found := trustSigner.BCTypes[symbol]
 	if !found {
 		fmt.Println("blockchain type not supported :", symbol)
@@ -106,7 +99,22 @@ func generateKeypair(appID string, symbol string) {
 		"address": address,
 		"wb":      base64.StdEncoding.EncodeToString(wbBytes),
 	}
-	_, e = vc.client.Logical().Write("bcks/"+keyID, vaultData)
+	_, e = vks.client.Logical().Write(serverConfig.Vault.WhiteBoxPath+"/"+keyID, vaultData)
+	checkAndDie(e)
+
+	keymapSecret, e := vks.client.Logical().Read(serverConfig.Vault.SecretKeymapPath)
+	checkAndDie(e)
+
+	var keymap map[string]interface{}
+	if keymapSecret == nil || keymapSecret.Data == nil {
+		keymap = make(map[string]interface{})
+	} else {
+		keymap = keymapSecret.Data
+	}
+
+	keymap[symbol+":"+address] = keyID
+
+	_, e = vks.client.Logical().Write(serverConfig.Vault.SecretKeymapPath, keymap)
 	checkAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
@@ -116,18 +124,10 @@ func generateKeypair(appID string, symbol string) {
 	fmt.Println("Address :", address)
 }
 
-func appIDtoKeyID(appID string) string {
-	hash := sha256.New()
-	hash.Write([]byte(appID))
-	return hex.EncodeToString(hash.Sum(nil))
-}
-
 func showKeypairInfo(appID string) {
-	vc := connectVault()
-
 	keyID := appIDtoKeyID(appID)
 
-	secret, e := vc.client.Logical().Read("bcks/" + keyID)
+	secret, e := vks.client.Logical().Read(serverConfig.Vault.WhiteBoxPath + "/" + keyID)
 	checkAndDie(e)
 
 	symbol := secret.Data["symbol"].(string)
@@ -140,19 +140,29 @@ func showKeypairInfo(appID string) {
 	fmt.Println("Address :", address)
 }
 
-func printVaultConfig() {
-	initKeyStore()
+func addAppAuth(appName string, cidr string) {
+	kp, e := stellarkp.Random()
+	checkAndDie(e)
 
-	var result map[string]string
-	result = make(map[string]string)
+	_, _, e = net.ParseCIDR(cidr)
+	checkAndDie(e)
 
-	for keyID, kp := range keyStore {
-		result[string(kp.bcType)+":"+kp.address] = keyID
+	data := map[string]interface{}{
+		"publicKey":  kp.Address(),
+		"privateKey": kp.Seed(),
+		"bind_cidr":  cidr,
 	}
 
-	rb, err := json.MarshalIndent(result, "", "  ")
-	checkAndDie(err)
+	_, e = vks.client.Logical().Write(serverConfig.Vault.AuthPath+"/"+appName, data)
+	checkAndDie(e)
 
-	fmt.Println("VaultConfig data")
-	fmt.Printf("\"signserver\": %s", string(rb))
+	fmt.Println("SigningApp added")
+	fmt.Println("AppName :", appName)
+	fmt.Println("PublicKey :", kp.Address())
+	fmt.Println("PrivateKey :", kp.Seed())
+	fmt.Println("Bind CIDR :", cidr)
+}
+
+func appIDtoKeyID(appID string) string {
+	return hex.EncodeToString(sha256Hash(appID))
 }

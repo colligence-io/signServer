@@ -75,7 +75,7 @@ func (vc *vaultConnection) startAutoRenew() {
 			time.Sleep(time.Second * time.Duration(sleep))
 		}
 		log.Println("Try reconnect to vault")
-		vc := connectVault()
-		vc.startAutoRenew()
+		vks = connectVault()
+		vks.startAutoRenew()
 	}()
 }
