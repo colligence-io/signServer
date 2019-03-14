@@ -5,7 +5,7 @@
 vault secrets enable -path=ss kv
 
 
-vault policy write dedicated-signserver-policy -<<EOF
+vault policy write dedicated-signserver-policy -&lt;&lt;EOF
 path "ss/*" {
   capabilities = ["read", "update", "delete", "create", "list"]
 }
@@ -25,7 +25,7 @@ EOF
 vault write auth/approle/role/signserver secret_id_ttl=10s secret_id_num_uses=1 period=300s policies=dedicated-signserver-policy
 
 
-vault policy write dedicated-signserver-keygen-policy -<<EOF
+vault policy write dedicated-signserver-keygen-policy -&lt;&lt;EOF
 path "auth/approle/role/signserver/role-id" {
   capabilities = ["read"]
 }
