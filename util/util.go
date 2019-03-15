@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"crypto/aes"
@@ -13,17 +13,23 @@ import (
 	"os"
 )
 
-func closeOrDie(entity io.Closer) {
-	checkAndDie(entity.Close())
+func CloseOrDie(entity io.Closer) {
+	CheckAndDie(entity.Close())
 }
 
-func checkAndDie(err error) {
+func CheckAndDie(err error) {
 	if err != nil {
 		log.Fatalln(err)
 	}
 }
 
-func readFromFile(path string) ([]byte, error) {
+func CheckAndPanic(err error) {
+	if err != nil {
+		log.Panicln(err)
+	}
+}
+
+func ReadFromFile(path string) ([]byte, error) {
 	f, e := os.Open(path)
 	if e != nil {
 		return nil, e
@@ -38,7 +44,7 @@ func readFromFile(path string) ([]byte, error) {
 	return bytes, nil
 }
 
-func encrypt(key []byte, plainText []byte) ([]byte, error) {
+func Encrypt(key []byte, plainText []byte) ([]byte, error) {
 	block, e := aes.NewCipher(key)
 	if e != nil {
 		return nil, e
@@ -59,7 +65,7 @@ func encrypt(key []byte, plainText []byte) ([]byte, error) {
 	return cipherText, nil
 }
 
-func decrypt(key []byte, cipherText []byte) ([]byte, error) {
+func Decrypt(key []byte, cipherText []byte) ([]byte, error) {
 	block, e := aes.NewCipher(key)
 	if e != nil {
 		return nil, e
@@ -78,18 +84,18 @@ func decrypt(key []byte, cipherText []byte) ([]byte, error) {
 	return cipherText, nil
 }
 
-func sha256Hash(appID string) []byte {
+func Sha256Hash(appID string) []byte {
 	hash := sha256.New()
 	hash.Write([]byte(appID))
 	return hash.Sum(nil)
 }
 
-func fileExists(name string) bool {
+func FileExists(name string) bool {
 	_, err := os.Stat(name)
 	return !os.IsNotExist(err)
 }
 
-func getIP(addr string) net.IP {
+func GetIP(addr string) net.IP {
 	host, _, e := net.SplitHostPort(addr)
 	if e != nil {
 		return nil

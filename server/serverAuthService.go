@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"github.com/colligence-io/signServer/rr"
+	"github.com/colligence-io/signServer/util"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/jwtauth"
 	stellarkp "github.com/stellar/go/keypair"
@@ -18,32 +19,48 @@ import (
 )
 
 type AuthService struct {
+	instance *Instance
+
 	// stores appInfos for apps
 	appInfos map[string]*appClientInfo
 
 	// stores issued tokenIDs for appName
 	issuedTokens map[string]string
 
-	// jwt TokenAuth
-	TokenAuth *jwtauth.JWTAuth
-
 	// appName key
 	ctxAppNameKey *struct{ name string }
+
+	// jwt TokenAuth
+	jwtSecretKey []byte
+
+	// jwt TokenVerifier
+	jwtVerifier func(handler http.Handler) http.Handler
 }
 
-// Initialize
-func (svcp *AuthService) Initialize() {
-	svcp.ctxAppNameKey = &struct{ name string }{"AppName"}
+func NewAuthService(instance *Instance) *AuthService {
+	svc := &AuthService{}
 
-	serverConfig.Auth.JwtSecretKey = sha256Hash(serverConfig.Auth.JwtSecret)
-	svcp.TokenAuth = jwtauth.New("HS256", serverConfig.Auth.JwtSecretKey, nil)
+	svc.instance = instance
 
-	svcp.appInfos = make(map[string]*appClientInfo)
-	svcp.issuedTokens = make(map[string]string)
+	svc.ctxAppNameKey = &struct{ name string }{"AppName"}
+
+	svc.jwtSecretKey = util.Sha256Hash(svc.instance.config.JwtSecret)
+
+	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
+	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
+
+	svc.appInfos = make(map[string]*appClientInfo)
+	svc.issuedTokens = make(map[string]string)
+
+	return svc
+}
+
+func (svc *AuthService) JwtVerifier(next http.Handler) http.Handler {
+	return svc.jwtVerifier(next)
 }
 
 // JWT authenticator
-func (svcp *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
+func (svc *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		token, _, err := jwtauth.FromContext(ctx)
@@ -59,9 +76,9 @@ func (svcp *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			if appName, ok := claims["sub"].(string); ok {
 				if tokenID, ok := claims["jti"].(string); ok {
-					if issuedToken, found := svcp.issuedTokens[appName]; found && issuedToken == tokenID {
+					if issuedToken, found := svc.issuedTokens[appName]; found && issuedToken == tokenID {
 						authed = true
-						ctx = context.WithValue(ctx, svcp.ctxAppNameKey, appName)
+						ctx = context.WithValue(ctx, svc.ctxAppNameKey, appName)
 					}
 				}
 			}
@@ -78,7 +95,7 @@ func (svcp *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 }
 
 // http.HandlerFunc Closure
-func (svcp *AuthService) closure(handler func(req *http.Request) rr.ResponseEntity) http.HandlerFunc {
+func (svc *AuthService) closure(handler func(req *http.Request) rr.ResponseEntity) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		rr.WriteResponseEntity(rw, handler(req))
 	}
@@ -86,8 +103,8 @@ func (svcp *AuthService) closure(handler func(req *http.Request) rr.ResponseEnti
 
 // Introduce
 // send question to client
-func (svcp *AuthService) Introduce() http.HandlerFunc { return svcp.closure(svcp.introduceHandler) }
-func (svcp *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
+func (svc *AuthService) Introduce() http.HandlerFunc { return svc.closure(svc.introduceHandler) }
+func (svc *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 	var request struct {
 		AppName string `json:"myNameIs"`
 	}
@@ -107,10 +124,10 @@ func (svcp *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	appInfo, found := svcp.appInfos[request.AppName]
+	appInfo, found := svc.appInfos[request.AppName]
 	if !found {
 		// Get appAuth secret from vault
-		appAuthSecret, e := vks.client.Logical().Read(serverConfig.Vault.AuthPath + "/" + request.AppName)
+		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.VaultAuthPath + "/" + request.AppName)
 		if appAuthSecret == nil || e != nil {
 			return rr.UnauthorizedResponse
 		}
@@ -156,11 +173,11 @@ func (svcp *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 			cidrChecker: ranger,
 		}
 
-		svcp.appInfos[request.AppName] = appInfo
+		svc.appInfos[request.AppName] = appInfo
 	}
 
 	// get remote ip
-	ip := getIP(req.RemoteAddr)
+	ip := util.GetIP(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
@@ -182,7 +199,7 @@ func (svcp *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 		return rr.ErrorResponse(e)
 	}
 
-	appInfo.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(serverConfig.Auth.QuestionExpires))
+	appInfo.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
 
 	// OK, send question
 	log.Println("sending question to ", request.AppName)
@@ -195,8 +212,8 @@ func (svcp *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 
 // Answer
 // check answer and send new jwt token to client
-func (svcp *AuthService) Answer() http.HandlerFunc { return svcp.closure(svcp.answerHandler) }
-func (svcp *AuthService) answerHandler(req *http.Request) rr.ResponseEntity {
+func (svc *AuthService) Answer() http.HandlerFunc { return svc.closure(svc.answerHandler) }
+func (svc *AuthService) answerHandler(req *http.Request) rr.ResponseEntity {
 	var request struct {
 		AppName   string `json:"myNameIs"`
 		Signature string `json:"myAnswerIs"`
@@ -217,13 +234,13 @@ func (svcp *AuthService) answerHandler(req *http.Request) rr.ResponseEntity {
 	}
 
 	// search appInfo
-	appInfo, found := svcp.appInfos[request.AppName]
+	appInfo, found := svc.appInfos[request.AppName]
 	if !found {
 		return rr.UnauthorizedResponse
 	}
 
 	// check request ip is same with intruduce
-	ip := getIP(req.RemoteAddr)
+	ip := util.GetIP(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
@@ -249,21 +266,22 @@ func (svcp *AuthService) answerHandler(req *http.Request) rr.ResponseEntity {
 	// generate tokenID from question
 	tokenID := hex.EncodeToString(appInfo.lastQuestion)
 
-	// build JWT token
+	// build JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{
 		Id:        tokenID,
 		Subject:   request.AppName,
 		IssuedAt:  time.Now().UTC().Unix(),
-		ExpiresAt: time.Now().UTC().Add(time.Second * time.Duration(serverConfig.Auth.JwtExpires)).Unix(),
+		ExpiresAt: time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.JwtExpires)).Unix(),
 	})
 
-	tokenString, e := token.SignedString(serverConfig.Auth.JwtSecretKey)
+	// sign JWT into JWS
+	tokenString, e := token.SignedString(svc.jwtSecretKey)
 	if e != nil {
 		return rr.ErrorResponse(e)
 	}
 
 	// store issued token for authenticator
-	svcp.issuedTokens[request.AppName] = tokenID
+	svc.issuedTokens[request.AppName] = tokenID
 
 	// OK, send token
 	log.Println("sending welcome present to", request.AppName)

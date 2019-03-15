@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/hex"
@@ -10,13 +10,12 @@ import (
 )
 
 type ProtectedService struct {
+	instance    *Instance
 	authService *AuthService
 }
 
-func (svcp *ProtectedService) Initialize() {
-	if svcp.authService == nil {
-		log.Fatalln("AuthService not set")
-	}
+func NewProtectedService(instance *Instance, authService *AuthService) *ProtectedService {
+	return &ProtectedService{instance: instance, authService: authService}
 }
 
 // http.HandlerFunc Closure
@@ -79,7 +78,7 @@ func (svcp *ProtectedService) signHandler(appName string, req *http.Request) rr.
 	}
 
 	// get whitebox from
-	wb := getWhiteBoxData(request.KeyID, request.Type)
+	wb := svcp.instance.ks.GetWhiteBoxData(request.KeyID, request.Type)
 
 	if wb == nil {
 		return rr.KoResponse(http.StatusNotFound, "")
@@ -94,10 +93,10 @@ func (svcp *ProtectedService) signHandler(appName string, req *http.Request) rr.
 	return rr.OkResponse(response)
 }
 
-// Reload
-// reload keyStore
-func (svcp *ProtectedService) Reload() http.HandlerFunc { return svcp.closure(svcp.reloadHandler) }
-func (svcp *ProtectedService) reloadHandler(appName string, req *http.Request) rr.ResponseEntity {
-	initKeyStore()
-	return rr.OkResponse("OK")
-}
+//// Reload
+//// reload keyStore
+//func (svcp *ProtectedService) Reload() http.HandlerFunc { return svcp.closure(svcp.reloadHandler) }
+//func (svcp *ProtectedService) reloadHandler(appName string, req *http.Request) rr.ResponseEntity {
+//	initKeyStore()
+//	return rr.OkResponse("OK")
+//}

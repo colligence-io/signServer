@@ -1,7 +1,8 @@
-package main
+package server
 
 import (
 	"encoding/base64"
+	"github.com/colligence-io/signServer/util"
 	stellarkp "github.com/stellar/go/keypair"
 	"github.com/yl2chen/cidranger"
 	"net"
@@ -38,7 +39,7 @@ func (appInfo *appClientInfo) checkCIDR(ip net.IP) bool {
 
 // check CIDR range match for ip string
 func (appInfo *appClientInfo) checkStringCIDR(addr string) bool {
-	if ip := getIP(addr); ip != nil {
+	if ip := util.GetIP(addr); ip != nil {
 		return appInfo.checkCIDR(ip)
 	}
 	return false

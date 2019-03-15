@@ -1,12 +1,14 @@
-package main
+package server
 
 import "C"
 import (
 	"fmt"
 	"github.com/colligence-io/signServer/rr"
+	"github.com/colligence-io/signServer/util"
+	"github.com/colligence-io/signServer/vault"
+	"github.com/colligence-io/signServer/whitebox"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	"github.com/go-chi/jwtauth"
 	"log"
 	"net/http"
 	"os"
@@ -15,21 +17,41 @@ import (
 	"time"
 )
 
-func launchServer(port int) {
+type Config struct {
+	VaultAuthPath   string
+	JwtSecret       string
+	JwtExpires      int
+	QuestionExpires int
+}
+
+type Instance struct {
+	config *Config
+	vc     *vault.Client
+	ks     *whitebox.KeyStore
+}
+
+func NewInstance(config Config, vaultClient *vault.Client, keyStore *whitebox.KeyStore) *Instance {
+	return &Instance{config: &config, vc: vaultClient, ks: keyStore}
+}
+
+func (instance *Instance) Launch(port int) {
+	if !instance.vc.IsConnected() {
+		instance.vc.Connect()
+		instance.vc.StartAutoRenew()
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.NoCache)
-	r.Use(dontPanic)
+	r.Use(instance.dontPanic)
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(middleware.SetHeader("Content-type", "application/json; charset=utf8"))
 
-	authService := &AuthService{}
-	authService.Initialize()
-	protectedService := &ProtectedService{authService}
-	protectedService.Initialize()
+	authService := NewAuthService(instance)
+	protectedService := NewProtectedService(instance, authService)
 
 	// Public Group
 	r.Group(func(r chi.Router) {
@@ -39,33 +61,26 @@ func launchServer(port int) {
 
 	// Protected Group
 	r.Group(func(r chi.Router) {
-		r.Use(jwtauth.Verifier(authService.TokenAuth))
+		r.Use(authService.JwtVerifier)
 		r.Use(authService.JwtAuthenticator)
 
 		r.Post("/knock", protectedService.Knock())
 		r.Post("/sign", protectedService.Sign())
-
-		// FIXME : this should be sealed, dangerous to reveal
-		r.Get("/reload", protectedService.Reload())
+		//
+		//// FIXME : this should be sealed, dangerous to reveal
+		//r.Get("/reload", protectedService.Reload())
 	})
 
-	initKeyStore()
-	logKeyStore()
+	instance.ks.Load()
+	instance.ks.LogKeyStoreEntries()
 
 	log.Printf("SignServer started : listen %d", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
-	checkAndDie(err)
-}
-
-// logKeyStore
-func logKeyStore() {
-	for keyID, kp := range keyStore {
-		log.Println("KeyPair", C.GoString((*C.char)(kp.whiteBox.AppID)), ":", keyID, kp.bcType, kp.address)
-	}
+	util.CheckAndDie(err)
 }
 
 // dontPanic
-func dontPanic(next http.Handler) http.Handler {
+func (instance *Instance) dontPanic(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rvr := recover(); rvr != nil {
