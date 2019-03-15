@@ -60,12 +60,12 @@ func GetWBPublicKey(wb *WhiteBox, bcType BlockChainType) string {
 	return string(publicKey)
 }
 
-//char *TrustSigner_getWBSignatureData(char *app_id, unsigned char *wb_data, int wb_data_len, char *coin_symbol, int hd_depth, int hd_change, int hd_index, char *hash_message);
+//unsigned char *TrustSigner_getWBSignatureData(char *app_id, unsigned char *wb_data, int wb_data_len, char *coin_symbol, int hd_depth, int hd_change, int hd_index, char *hash_message, int hash_len);
 func GetWBSignatureData(wb *WhiteBox, bcType BlockChainType, message []byte) []byte {
 	cPtrCharSymbol := C.CString(string(bcType))
 	defer C.free(unsafe.Pointer(cPtrCharSymbol))
 
-	cCharPtrResult := C.TrustSigner_getWBSignatureData(wb.AppID, wb.Pointer, wb.Size, cPtrCharSymbol, C.int(bcConfig[bcType].HDDepth), C.int(0), C.int(0), (*C.char)(unsafe.Pointer(&message[0])))
+	cCharPtrResult := C.TrustSigner_getWBSignatureData(wb.AppID, wb.Pointer, wb.Size, cPtrCharSymbol, C.int(bcConfig[bcType].HDDepth), C.int(0), C.int(0), (*C.char)(unsafe.Pointer(&message[0])), C.int(C.size_t(len(message))))
 	defer C.free(unsafe.Pointer(cCharPtrResult))
 
 	signature := C.GoBytes(unsafe.Pointer(cCharPtrResult), C.int(bcConfig[bcType].SignatureLength))
