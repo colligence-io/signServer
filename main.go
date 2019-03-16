@@ -116,17 +116,17 @@ func usage() {
 }
 
 func getConfig() *Configuration {
-	if util.FileExists(RAWCONFIGFILE) {
+	if util.File.Exists(RAWCONFIGFILE) {
 		fmt.Println("Initialize configuration")
 		fmt.Print("Enter new launching key : ")
 		key := getLaunchingKey()
-		rcBytes, e := util.ReadFromFile(RAWCONFIGFILE)
+		rcBytes, e := util.File.Read(RAWCONFIGFILE)
 		util.CheckAndDie(e)
 
-		cBytes, e := util.Encrypt(key, rcBytes)
+		cBytes, e := util.Crypto.EncryptAES(key, rcBytes)
 		util.CheckAndDie(e)
 
-		if util.FileExists(CONFIGFILE) {
+		if util.File.Exists(CONFIGFILE) {
 			fmt.Println(CONFIGFILE, "found, overwrite.")
 		}
 
@@ -140,17 +140,17 @@ func getConfig() *Configuration {
 		os.Exit(0)
 	}
 
-	if !util.FileExists(CONFIGFILE) {
+	if !util.File.Exists(CONFIGFILE) {
 		log.Fatalln("config not found")
 	}
 
 	fmt.Print("Enter new launching key : ")
 	key := getLaunchingKey()
 
-	cBytes, e := util.ReadFromFile(CONFIGFILE)
+	cBytes, e := util.File.Read(CONFIGFILE)
 	util.CheckAndDie(e)
 
-	cfg, e := util.Decrypt(key, cBytes)
+	cfg, e := util.Crypto.DecryptAES(key, cBytes)
 	util.CheckAndDie(e)
 
 	config := &Configuration{}
@@ -168,5 +168,5 @@ func getLaunchingKey() []byte {
 	scanner.Scan()
 	key := scanner.Text()
 
-	return util.Sha256Hash(key)
+	return util.Crypto.Sha256Hash(key)
 }

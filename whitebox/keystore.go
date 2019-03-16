@@ -212,5 +212,5 @@ func (ks *KeyStore) AddAppAuth(appName string, cidr string) {
 }
 
 func (ks *KeyStore) appIDtoKeyID(appID string) string {
-	return hex.EncodeToString(util.Sha256Hash(appID))
+	return hex.EncodeToString(util.Crypto.Sha256Hash(appID))
 }

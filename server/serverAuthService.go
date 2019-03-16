@@ -46,7 +46,7 @@ func NewAuthService(instance *Instance) *AuthService {
 
 	svc.ctxAppNameKey = &struct{ name string }{"AppName"}
 
-	svc.jwtSecretKey = util.Sha256Hash(svc.instance.config.JwtSecret)
+	svc.jwtSecretKey = util.Crypto.Sha256Hash(svc.instance.config.JwtSecret)
 
 	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
 	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
@@ -181,7 +181,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	}
 
 	// get remote ip
-	ip := util.GetIP(req.RemoteAddr)
+	ip := getIPfromAddress(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
@@ -246,7 +246,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	}
 
 	// check request ip is same with intruduce
-	ip := util.GetIP(req.RemoteAddr)
+	ip := getIPfromAddress(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
