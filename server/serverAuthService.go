@@ -18,6 +18,7 @@ import (
 	"time"
 )
 
+// AuthService
 type AuthService struct {
 	instance *Instance
 
@@ -37,6 +38,7 @@ type AuthService struct {
 	jwtVerifier func(handler http.Handler) http.Handler
 }
 
+// NewAuthService
 func NewAuthService(instance *Instance) *AuthService {
 	svc := &AuthService{}
 
@@ -55,11 +57,12 @@ func NewAuthService(instance *Instance) *AuthService {
 	return svc
 }
 
+// JWT Verifier
 func (svc *AuthService) JwtVerifier(next http.Handler) http.Handler {
 	return svc.jwtVerifier(next)
 }
 
-// JWT authenticator
+// JWT Authenticator
 func (svc *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -94,17 +97,18 @@ func (svc *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 	})
 }
 
-// http.HandlerFunc Closure
-func (svc *AuthService) closure(handler func(req *http.Request) rr.ResponseEntity) http.HandlerFunc {
-	return func(rw http.ResponseWriter, req *http.Request) {
-		rr.WriteResponseEntity(rw, handler(req))
-	}
+// handlerClosure
+// closure to simplify http.HandlerFunc
+func (svc *AuthService) handlerClosure(rw http.ResponseWriter, req *http.Request, handler func(req *http.Request) rr.ResponseEntity) {
+	rr.WriteResponseEntity(rw, handler(req))
 }
 
-// Introduce
+// IntroduceHandler
 // send question to client
-func (svc *AuthService) Introduce() http.HandlerFunc { return svc.closure(svc.introduceHandler) }
-func (svc *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
+func (svc *AuthService) IntroduceHandler(rw http.ResponseWriter, r *http.Request) {
+	svc.handlerClosure(rw, r, svc.introduce)
+}
+func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	var request struct {
 		AppName string `json:"myNameIs"`
 	}
@@ -212,8 +216,10 @@ func (svc *AuthService) introduceHandler(req *http.Request) rr.ResponseEntity {
 
 // Answer
 // check answer and send new jwt token to client
-func (svc *AuthService) Answer() http.HandlerFunc { return svc.closure(svc.answerHandler) }
-func (svc *AuthService) answerHandler(req *http.Request) rr.ResponseEntity {
+func (svc *AuthService) AnswerHandler(rw http.ResponseWriter, r *http.Request) {
+	svc.handlerClosure(rw, r, svc.answer)
+}
+func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	var request struct {
 		AppName   string `json:"myNameIs"`
 		Signature string `json:"myAnswerIs"`

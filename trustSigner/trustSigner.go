@@ -1,10 +1,13 @@
 package trustSigner
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/lib
-#cgo LDFLAGS: -L${SRCDIR}/lib -Wl,-rpath=\$ORIGIN/trustSigner/lib -ltrustsigner
-#include "libtrustsigner.h"
+#cgo LDFLAGS: -L${SRCDIR} -Wl,-rpath=\$ORIGIN/trustSigner -ltrustsigner
+
 #include <stdlib.h>
+
+unsigned char *TrustSigner_getWBInitializeData(char *app_id);
+char *TrustSigner_getWBPublicKey(char *app_id, unsigned char *wb_data, int wb_data_len, char *coin_symbol, int hd_depth, int hd_change, int hd_index);
+unsigned char *TrustSigner_getWBSignatureData(char *app_id, unsigned char *wb_data, int wb_data_len, char *coin_symbol, int hd_depth, int hd_change, int hd_index, char *hash_message, int hash_len);
 */
 import "C"
 import (
@@ -24,7 +27,7 @@ func DeriveAddress(bcType BlockChainType, publicKey string) (string, error) {
 	return bcConfig[bcType].Address(publicKey)
 }
 
-//unsigned char[] TrustSigner_getWBInitializeData(char *app_id);
+//unsigned char *TrustSigner_getWBInitializeData(char *app_id);
 func GetWBInitializeData(appId string) []byte {
 	cPtrCharAppID := C.CString(appId)
 	defer C.free(unsafe.Pointer(cPtrCharAppID))

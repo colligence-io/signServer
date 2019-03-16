@@ -49,6 +49,11 @@ func (ks *KeyStore) Load() {
 	ksList, e := ks.vc.Logical().List(ks.config.WhiteBoxPath)
 	util.CheckAndDie(e)
 
+	if ksList == nil {
+		log.Println("no whitebox data in storage")
+		return
+	}
+
 	for _, ik := range ksList.Data["keys"].([]interface{}) {
 		keyID := ik.(string)
 

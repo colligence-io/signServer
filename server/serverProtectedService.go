@@ -9,49 +9,55 @@ import (
 	"time"
 )
 
+// ProtectedService
 type ProtectedService struct {
 	instance    *Instance
 	authService *AuthService
+	handlerType interface{}
 }
 
+// NewProtectedService
 func NewProtectedService(instance *Instance, authService *AuthService) *ProtectedService {
 	return &ProtectedService{instance: instance, authService: authService}
 }
 
-// http.HandlerFunc Closure
-func (svcp *ProtectedService) closure(handler func(appName string, req *http.Request) rr.ResponseEntity) http.HandlerFunc {
-	return func(rw http.ResponseWriter, req *http.Request) {
-		appName, ok := req.Context().Value(svcp.authService.ctxAppNameKey).(string)
-		if !ok || appName == "" {
-			rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
-			return
-		}
-
-		appInfo, found := svcp.authService.appInfos[appName]
-		if !found {
-			rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
-			return
-		}
-		if !appInfo.checkStringCIDR(req.RemoteAddr) {
-			rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
-			return
-		}
-
-		rr.WriteResponseEntity(rw, handler(appName, req))
+// handlerClosure
+// closure to simplify http.HandlerFunc
+func (svcp *ProtectedService) handlerClosure(rw http.ResponseWriter, req *http.Request, handler func(appName string, req *http.Request) rr.ResponseEntity) {
+	appName, ok := req.Context().Value(svcp.authService.ctxAppNameKey).(string)
+	if !ok || appName == "" {
+		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
+		return
 	}
+
+	appInfo, found := svcp.authService.appInfos[appName]
+	if !found {
+		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
+		return
+	}
+	if !appInfo.checkStringCIDR(req.RemoteAddr) {
+		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
+		return
+	}
+
+	rr.WriteResponseEntity(rw, handler(appName, req))
 }
 
-// Knock
+// KnockHandler
 // knock knock
-func (svcp *ProtectedService) Knock() http.HandlerFunc { return svcp.closure(svcp.knockHandler) }
-func (svcp *ProtectedService) knockHandler(appName string, req *http.Request) rr.ResponseEntity {
+func (svcp *ProtectedService) KnockHandler(rw http.ResponseWriter, req *http.Request) {
+	svcp.handlerClosure(rw, req, svcp.knock)
+}
+func (svcp *ProtectedService) knock(appName string, req *http.Request) rr.ResponseEntity {
 	return rr.OkResponse(time.Now().UTC().Unix())
 }
 
 // Sign
 // sign requested message
-func (svcp *ProtectedService) Sign() http.HandlerFunc { return svcp.closure(svcp.signHandler) }
-func (svcp *ProtectedService) signHandler(appName string, req *http.Request) rr.ResponseEntity {
+func (svcp *ProtectedService) SignHandler(rw http.ResponseWriter, req *http.Request) {
+	svcp.handlerClosure(rw, req, svcp.sign)
+}
+func (svcp *ProtectedService) sign(appName string, req *http.Request) rr.ResponseEntity {
 	var request struct {
 		KeyID   string                     `json:"keyID"`
 		Type    trustSigner.BlockChainType `json:"type"`
@@ -93,10 +99,10 @@ func (svcp *ProtectedService) signHandler(appName string, req *http.Request) rr.
 	return rr.OkResponse(response)
 }
 
-//// Reload
-//// reload keyStore
-//func (svcp *ProtectedService) Reload() http.HandlerFunc { return svcp.closure(svcp.reloadHandler) }
-//func (svcp *ProtectedService) reloadHandler(appName string, req *http.Request) rr.ResponseEntity {
+// Reload
+// reload keyStore
+//func (svcp *ProtectedService) ReloadHandler(rw http.ResponseWriter, req *http.Request) { svcp.handlerClosure(rw, req, svcp.reload) }
+//func (svcp *ProtectedService) reload(appName string, req *http.Request) rr.ResponseEntity {
 //	initKeyStore()
 //	return rr.OkResponse("OK")
 //}

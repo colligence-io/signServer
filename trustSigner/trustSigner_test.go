@@ -1,6 +1,6 @@
 /*
 should run with -ldflags
-go test -ldflags=-r=./lib
+go test -ldflags=-r=.
 */
 package trustSigner_test
 

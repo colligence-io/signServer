@@ -55,8 +55,8 @@ func (instance *Instance) Launch(port int) {
 
 	// Public Group
 	r.Group(func(r chi.Router) {
-		r.Post("/introduce", authService.Introduce())
-		r.Post("/answer", authService.Answer())
+		r.Post("/introduce", authService.IntroduceHandler)
+		r.Post("/answer", authService.AnswerHandler)
 	})
 
 	// Protected Group
@@ -64,11 +64,11 @@ func (instance *Instance) Launch(port int) {
 		r.Use(authService.JwtVerifier)
 		r.Use(authService.JwtAuthenticator)
 
-		r.Post("/knock", protectedService.Knock())
-		r.Post("/sign", protectedService.Sign())
+		r.Post("/knock", protectedService.KnockHandler)
+		r.Post("/sign", protectedService.SignHandler)
 		//
 		//// FIXME : this should be sealed, dangerous to reveal
-		//r.Get("/reload", protectedService.Reload())
+		//r.Get("/reload", protectedService.Reload)
 	})
 
 	instance.ks.Load()
