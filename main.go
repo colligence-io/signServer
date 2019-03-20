@@ -8,10 +8,13 @@ import (
 	"github.com/colligence-io/signServer/util"
 	"github.com/colligence-io/signServer/vault"
 	"github.com/colligence-io/signServer/whitebox"
+	"github.com/sirupsen/logrus"
+	"io"
 	"io/ioutil"
-	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const CONFIGFILE = ".config"
@@ -19,8 +22,15 @@ const RAWCONFIGFILE = "config.json"
 const RAWCONFIGFILEREMOVE = "config.json.REMOVE"
 
 type Configuration struct {
-	Auth  *AuthConfig  `json:"auth"`
-	Vault *VaultConfig `json:"vault"`
+	Log   LogConfig   `json:"log"`
+	Auth  AuthConfig  `json:"auth"`
+	Vault VaultConfig `json:"vault"`
+}
+
+type LogConfig struct {
+	Path       string `json:"path"`
+	AccessLog  string `json:"access"`
+	ServiceLog string `json:"service"`
 }
 
 type AuthConfig struct {
@@ -49,6 +59,8 @@ func main() {
 	} else {
 		mode = os.Args[1]
 	}
+
+	setLogger(config.Log)
 
 	vc := vault.NewClient(vault.Config{
 		Username: config.Vault.Username,
@@ -80,6 +92,7 @@ func main() {
 			JwtSecret:       config.Auth.JwtSecret,
 			JwtExpires:      config.Auth.JwtExpires,
 			QuestionExpires: config.Auth.QuestionExpires,
+			AccessLogWriter: getAccessLogWriter(config.Log),
 		}, vc, wbks)
 		ss.Launch(port)
 	case "kpgen":
@@ -143,7 +156,7 @@ func getConfig() *Configuration {
 	}
 
 	if !util.File.Exists(CONFIGFILE) {
-		log.Fatalln("config not found")
+		util.Die("config not found")
 	}
 
 	fmt.Print("Enter new launching key : ")
@@ -158,9 +171,7 @@ func getConfig() *Configuration {
 	config := &Configuration{}
 
 	e = json.Unmarshal(cfg, config)
-	if e != nil {
-		log.Fatalln("launching failed")
-	}
+	util.CheckAndDie(e)
 
 	return config
 }
@@ -171,4 +182,59 @@ func getLaunchingKey() []byte {
 	key := scanner.Text()
 
 	return util.Crypto.Sha256Hash(key)
+}
+
+func setLogger(cfg LogConfig) {
+	logrus.SetOutput(os.Stdout)
+
+	if cfg.ServiceLog != "" {
+		path := getLogPath(cfg)
+		if path != "" && cfg.ServiceLog != "" {
+			if file, err := os.OpenFile(path+"/"+cfg.ServiceLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+				logrus.SetOutput(io.MultiWriter(os.Stdout, file))
+			} else {
+				logrus.Warn("Failed to open service log to file, using default stdout")
+			}
+		}
+	}
+}
+
+func getAccessLogWriter(cfg LogConfig) io.Writer {
+	if cfg.AccessLog != "" {
+		path := getLogPath(cfg)
+		if path != "" && cfg.AccessLog != "" {
+			file, err := os.OpenFile(path+"/"+cfg.AccessLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err == nil {
+				return io.MultiWriter(os.Stdout, file)
+			} else {
+				logrus.Warn("Failed to open access log to file, using default stdout")
+			}
+		}
+	}
+	return nil
+}
+
+func getLogPath(cfg LogConfig) string {
+	var path = cfg.Path
+
+	if path == "" {
+		path = "."
+	}
+
+	if !strings.HasPrefix(path, "/") {
+		ex, err := os.Executable()
+		util.CheckAndDie(err)
+
+		path = filepath.Dir(ex) + "/" + path
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err = os.Mkdir(path, 0755)
+		if err != nil {
+			logrus.Warn("Cannot make log directory")
+			return ""
+		}
+	}
+
+	return path
 }

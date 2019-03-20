@@ -2,8 +2,8 @@ package rr
 
 import (
 	"encoding/json"
+	"github.com/colligence-io/signServer/util"
 	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -38,17 +38,12 @@ func OkResponse(data interface{}) ResponseEntity {
 
 func WriteResponseEntity(rw http.ResponseWriter, entity ResponseEntity) {
 	resBytes, err := json.Marshal(entity)
-	if err != nil {
-		http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		log.Println("cannot marshal data")
-		return
-	}
+	util.CheckAndPanic(err)
 
 	rw.WriteHeader(entity.Code)
 
-	if _, err := rw.Write(resBytes); err != nil {
-		log.Println("cannot write to response")
-	}
+	_, err = rw.Write(resBytes)
+	util.CheckAndPanic(err)
 }
 
 func ReadRequestBody(req *http.Request, body interface{}) error {

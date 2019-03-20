@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"github.com/colligence-io/signServer/rr"
 	"github.com/colligence-io/signServer/trustSigner"
-	"log"
 	"net/http"
 	"time"
 )
@@ -74,7 +73,7 @@ func (svcp *ProtectedService) sign(appName string, req *http.Request) rr.Respons
 		return rr.ErrorResponse(err)
 	}
 
-	log.Println("sign request from", appName, ":", request.Data)
+	logger.Println("sign request from ", appName, " : ", request.Data)
 
 	// get data to sign
 	dataToSign, err := hex.DecodeString(request.Data)

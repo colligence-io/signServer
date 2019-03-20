@@ -6,3 +6,4 @@ go.sum
 config.json
 config.json.REMOVE
 .config
+log

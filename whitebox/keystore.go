@@ -8,10 +8,12 @@ import (
 	"github.com/colligence-io/signServer/trustSigner"
 	"github.com/colligence-io/signServer/util"
 	"github.com/colligence-io/signServer/vault"
+	"github.com/sirupsen/logrus"
 	stellarkp "github.com/stellar/go/keypair"
-	"log"
 	"net"
 )
+
+var logger = logrus.WithField("module", "WhiteBoxKeyStore")
 
 type Config struct {
 	WhiteBoxPath     string
@@ -50,7 +52,7 @@ func (ks *KeyStore) Load() {
 	util.CheckAndDie(e)
 
 	if ksList == nil {
-		log.Println("no whitebox data in storage")
+		logger.Warn("no whitebox data in storage")
 		return
 	}
 
@@ -103,7 +105,7 @@ func (ks *KeyStore) GetWhiteBoxData(keyID string, bcType trustSigner.BlockChainT
 
 func (ks *KeyStore) LogKeyStoreEntries() {
 	for keyID, kp := range ks.storage {
-		log.Println("KeyPair", C.GoString((*C.char)(kp.whiteBox.AppID)), ":", keyID, kp.bcType, kp.address)
+		logger.Info("KeyPair ", C.GoString((*C.char)(kp.whiteBox.AppID)), " : ", keyID, kp.bcType, kp.address)
 	}
 }
 

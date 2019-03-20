@@ -1,8 +1,8 @@
 package util
 
 import (
+	"github.com/sirupsen/logrus"
 	"io"
-	"log"
 )
 
 var (
@@ -16,12 +16,16 @@ func CloseOrDie(entity io.Closer) {
 
 func CheckAndDie(err error) {
 	if err != nil {
-		log.Fatalln(err)
+		logrus.Fatalln(err)
 	}
 }
 
 func CheckAndPanic(err error) {
 	if err != nil {
-		log.Panicln(err)
+		logrus.Panicln(err)
 	}
+}
+
+func Die(message string) {
+	logrus.Fatalln()
 }

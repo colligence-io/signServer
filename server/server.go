@@ -9,6 +9,8 @@ import (
 	"github.com/colligence-io/signServer/whitebox"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/sirupsen/logrus"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -18,11 +20,14 @@ import (
 	"time"
 )
 
+var logger = logrus.WithField("module", "Server")
+
 type Config struct {
 	VaultAuthPath   string
 	JwtSecret       string
 	JwtExpires      int
 	QuestionExpires int
+	AccessLogWriter io.Writer
 }
 
 type Instance struct {
@@ -45,7 +50,11 @@ func (instance *Instance) Launch(port int) {
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	if instance.config.AccessLogWriter != nil {
+		r.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{Logger: log.New(instance.config.AccessLogWriter, "", log.LstdFlags), NoColor: false}))
+	} else {
+		r.Use(middleware.Logger)
+	}
 	r.Use(middleware.NoCache)
 	r.Use(instance.dontPanic)
 	r.Use(middleware.Timeout(30 * time.Second))
@@ -75,7 +84,7 @@ func (instance *Instance) Launch(port int) {
 	instance.ks.Load()
 	instance.ks.LogKeyStoreEntries()
 
-	log.Printf("SignServer started : listen %d", port)
+	logger.Info("SignServer started : listen", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
 	util.CheckAndDie(err)
 }

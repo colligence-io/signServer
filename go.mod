@@ -21,6 +21,7 @@ require (
 	github.com/pierrec/lz4 v2.0.5+incompatible // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/sirupsen/logrus v1.4.0
 	github.com/stellar/go v0.0.0-20190313144823-912334a53331
 	github.com/stellar/go-xdr v0.0.0-20180917104419-0bc96f33a18e // indirect
 	github.com/yl2chen/cidranger v0.0.0-20180214081945-928b519e5268

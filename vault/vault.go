@@ -2,10 +2,13 @@ package vault
 
 import (
 	"errors"
+	"github.com/colligence-io/signServer/util"
 	vault "github.com/hashicorp/vault/api"
-	"log"
+	"github.com/sirupsen/logrus"
 	"time"
 )
+
+var logger = logrus.WithField("module", "VaultClient")
 
 type Config struct {
 	Username string
@@ -29,30 +32,30 @@ func (vc *Client) Connect() {
 	client, e := vault.NewClient(&vault.Config{
 		Address: vc.config.Address,
 	})
-	checkAndPanic(e)
+	util.CheckAndPanic(e)
 
-	log.Println("Connected to vault :", vc.config.Address)
+	logger.Info("Connected to vault : ", vc.config.Address)
 
 	password := map[string]interface{}{"password": vc.config.Password}
 
 	userpassAuth, e := client.Logical().Write("auth/userpass/login/"+vc.config.Username, password)
-	checkAndPanic(e)
+	util.CheckAndPanic(e)
 
 	client.SetToken(userpassAuth.Auth.ClientToken)
 	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vc.config.AppRole + "/role-id")
-	checkAndPanic(e)
+	util.CheckAndPanic(e)
 
 	roleID, found := roleIDsecret.Data["role_id"]
 	if !found {
-		checkAndPanic(errors.New("role id check failed"))
+		util.CheckAndPanic(errors.New("role id check failed"))
 	}
 
 	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vc.config.AppRole+"/secret-id", nil)
-	checkAndPanic(e)
+	util.CheckAndPanic(e)
 
 	secretID, found := secretIDsecret.Data["secret_id"]
 	if !found {
-		checkAndPanic(errors.New("role secret check failed"))
+		util.CheckAndPanic(errors.New("role secret check failed"))
 	}
 
 	approleSecret := map[string]interface{}{
@@ -61,7 +64,7 @@ func (vc *Client) Connect() {
 	}
 
 	approleAuth, e := client.Logical().Write("auth/approle/login", approleSecret)
-	checkAndPanic(e)
+	util.CheckAndPanic(e)
 
 	vc.client = client
 	vc.setAuth(approleAuth.Auth)
@@ -86,37 +89,31 @@ func (vc *Client) StartAutoRenew() {
 	go func() {
 		for {
 			sleep := vc.auth.LeaseDuration * 80 / 100
-			log.Printf("Vault token will be renewed in %d seconds\n", sleep)
+			logger.Debugf("Vault token will be renewed in %d seconds", sleep)
 			time.Sleep(time.Second * time.Duration(sleep))
 
 			newAppRoleAuth, e := vc.client.Auth().Token().RenewSelf(0)
 			if e != nil {
-				log.Println("Vault token renewal failed", e)
+				logger.Error("Vault token renewal failed ", e)
 
 				// retry 5 times or die
 				for i := 0; i < 6; i++ {
 					func(vcr *Client) {
 						defer func() {
 							if r := recover(); r != nil {
-								log.Println("Wait 10 seconds for next reconnect trial...")
+								logger.Info("Wait 10 seconds for next reconnect trial...")
 								time.Sleep(time.Second * 10)
 							}
 						}()
-						log.Println("Trying to reconnect, count =", i+1)
+						logger.Info("Trying to reconnect, count = ", i+1)
 						vcr.Connect()
 					}(vc)
 				}
 
-				log.Fatalln("Cannot connect vault, Shutdown.")
+				util.Die("Cannot connect vault, Shutdown.")
 			} else {
 				vc.setAuth(newAppRoleAuth.Auth)
 			}
 		}
 	}()
-}
-
-func checkAndPanic(err error) {
-	if err != nil {
-		log.Panicln(err)
-	}
 }

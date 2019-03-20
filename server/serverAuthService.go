@@ -12,7 +12,6 @@ import (
 	stellarkp "github.com/stellar/go/keypair"
 	"github.com/yl2chen/cidranger"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"time"
@@ -137,14 +136,14 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		}
 
 		if appAuthSecret.Data == nil {
-			log.Println("Broken AppAuth : Data is null -", request.AppName)
+			logger.Println("Broken AppAuth : Data is null - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
 		// get bind_cidr
 		cidr, ok := appAuthSecret.Data["bind_cidr"].(string)
 		if !ok {
-			log.Println("Broken AppAuth : CIDR not found -", request.AppName)
+			logger.Println("Broken AppAuth : CIDR not found - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -153,7 +152,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 
 		e = ranger.Insert(cidranger.NewBasicRangerEntry(*network1))
 		if e != nil {
-			log.Println("Broken AppAuth : CIDR parse error -", request.AppName)
+			logger.Println("Broken AppAuth : CIDR parse error - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -162,13 +161,13 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		// maybe assertion needed for make sure
 		privateKey, ok := appAuthSecret.Data["privateKey"].(string)
 		if !ok {
-			log.Println("Broken AppAuth : privateKey not found -", request.AppName)
+			logger.Println("Broken AppAuth : privateKey not found - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
 		kp, e := stellarkp.Parse(privateKey)
 		if e != nil {
-			log.Println("Broken AppAuth : privateKey parse error -", request.AppName)
+			logger.Println("Broken AppAuth : privateKey parse error - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -193,7 +192,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	appInfo.lastRequestIP = ip
 
 	// OK, seems proper access
-	log.Println("introduce from", req.RemoteAddr, "by", request.AppName)
+	logger.Println("introduce from ", req.RemoteAddr, " by ", request.AppName)
 
 	// generate random question
 	appInfo.lastQuestion = make([]byte, 32)
@@ -206,7 +205,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	appInfo.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
 
 	// OK, send question
-	log.Println("sending question to ", request.AppName)
+	logger.Println("sending question to ", request.AppName)
 
 	response.Question = base64.StdEncoding.EncodeToString(appInfo.lastQuestion)
 	response.Expires = appInfo.lastQuestionExpires.Format(time.RFC3339)
@@ -257,7 +256,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	log.Println("answer from", req.RemoteAddr, "by", request.AppName)
+	logger.Println("answer from ", req.RemoteAddr, " by ", request.AppName)
 
 	// check expiration
 	if appInfo.isQuestionExpired() {
@@ -290,7 +289,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	svc.issuedTokens[request.AppName] = tokenID
 
 	// OK, send token
-	log.Println("sending welcome present to", request.AppName)
+	logger.Println("sending welcome present to ", request.AppName)
 
 	response.JwtToken = tokenString
 
