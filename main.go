@@ -32,6 +32,7 @@ type AuthConfig struct {
 type VaultConfig struct {
 	Username         string `json:"username"`
 	Password         string `json:"password"`
+	AppRole          string `json:"approle"`
 	Address          string `json:"address"`
 	WhiteBoxPath     string `json:"whiteboxPath"`
 	AuthPath         string `json:"authPath"`
@@ -52,6 +53,7 @@ func main() {
 	vc := vault.NewClient(vault.Config{
 		Username: config.Vault.Username,
 		Password: config.Vault.Password,
+		AppRole:  config.Vault.AppRole,
 		Address:  config.Vault.Address,
 	})
 

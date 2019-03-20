@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Username string
 	Password string
+	AppRole  string
 	Address  string
 }
 
@@ -38,7 +39,7 @@ func (vc *Client) Connect() {
 	checkAndPanic(e)
 
 	client.SetToken(userpassAuth.Auth.ClientToken)
-	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vc.config.Username + "/role-id")
+	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vc.config.AppRole + "/role-id")
 	checkAndPanic(e)
 
 	roleID, found := roleIDsecret.Data["role_id"]
@@ -46,7 +47,7 @@ func (vc *Client) Connect() {
 		checkAndPanic(errors.New("role id check failed"))
 	}
 
-	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vc.config.Username+"/secret-id", nil)
+	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vc.config.AppRole+"/secret-id", nil)
 	checkAndPanic(e)
 
 	secretID, found := secretIDsecret.Data["secret_id"]
