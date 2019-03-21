@@ -191,7 +191,7 @@ func setLogger(cfg LogConfig) {
 		path := getLogPath(cfg)
 		if path != "" && cfg.ServiceLog != "" {
 			if file, err := os.OpenFile(path+"/"+cfg.ServiceLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
-				logrus.SetOutput(io.MultiWriter(os.Stdout, file))
+				logrus.SetOutput(io.MultiWriter(file, os.Stdout))
 			} else {
 				logrus.Warn("Failed to open service log to file, using default stdout")
 			}
@@ -205,7 +205,7 @@ func getAccessLogWriter(cfg LogConfig) io.Writer {
 		if path != "" && cfg.AccessLog != "" {
 			file, err := os.OpenFile(path+"/"+cfg.AccessLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 			if err == nil {
-				return io.MultiWriter(os.Stdout, file)
+				return io.MultiWriter(file, os.Stdout)
 			} else {
 				logrus.Warn("Failed to open access log to file, using default stdout")
 			}
