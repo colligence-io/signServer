@@ -40,13 +40,12 @@ type AuthConfig struct {
 }
 
 type VaultConfig struct {
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	AppRole          string `json:"approle"`
-	Address          string `json:"address"`
-	WhiteBoxPath     string `json:"whiteboxPath"`
-	AuthPath         string `json:"authPath"`
-	SecretKeymapPath string `json:"secretKeymapPath"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	AppRole      string `json:"approle"`
+	Address      string `json:"address"`
+	WhiteBoxPath string `json:"whiteboxPath"`
+	AuthPath     string `json:"authPath"`
 }
 
 func main() {
@@ -70,9 +69,8 @@ func main() {
 	})
 
 	wbks := whitebox.NewKeyStore(whitebox.Config{
-		AuthPath:         config.Vault.AuthPath,
-		SecretKeymapPath: config.Vault.SecretKeymapPath,
-		WhiteBoxPath:     config.Vault.WhiteBoxPath,
+		AuthPath:     config.Vault.AuthPath,
+		WhiteBoxPath: config.Vault.WhiteBoxPath,
 	}, vc)
 
 	switch mode {

@@ -8,16 +8,25 @@ import (
 	"time"
 )
 
-type appClientInfo struct {
+type authSession struct {
+	appName             string
 	keypair             stellarkp.KP
 	cidrChecker         cidranger.Ranger
 	lastQuestion        []byte
 	lastRequestIP       net.IP
 	lastQuestionExpires time.Time
+	issuedToken         string
+	keyQuizMap          map[string]sessionQuiz
+}
+
+type sessionQuiz struct {
+	question string
+	answer   string
+	keyID    string
 }
 
 // verify signature with last question
-func (appInfo *appClientInfo) verifySignature(signature string) bool {
+func (appInfo *authSession) verifySignature(signature string) bool {
 	sigBytes, e := base64.StdEncoding.DecodeString(signature)
 	if e != nil {
 		return false
@@ -28,7 +37,7 @@ func (appInfo *appClientInfo) verifySignature(signature string) bool {
 }
 
 // check CIDR range match for ip
-func (appInfo *appClientInfo) checkCIDR(ip net.IP) bool {
+func (appInfo *authSession) checkCIDR(ip net.IP) bool {
 	contains, e := appInfo.cidrChecker.Contains(ip)
 	if e != nil {
 		return false
@@ -37,7 +46,7 @@ func (appInfo *appClientInfo) checkCIDR(ip net.IP) bool {
 }
 
 // check CIDR range match for ip string
-func (appInfo *appClientInfo) checkStringCIDR(addr string) bool {
+func (appInfo *authSession) checkStringCIDR(addr string) bool {
 	if ip := getIPfromAddress(addr); ip != nil {
 		return appInfo.checkCIDR(ip)
 	}
@@ -45,6 +54,6 @@ func (appInfo *appClientInfo) checkStringCIDR(addr string) bool {
 }
 
 // check question is expired
-func (appInfo *appClientInfo) isQuestionExpired() bool {
+func (appInfo *authSession) isQuestionExpired() bool {
 	return appInfo.lastQuestionExpires.Before(time.Now())
 }

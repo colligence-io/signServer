@@ -27,5 +27,5 @@ func CheckAndPanic(err error) {
 }
 
 func Die(message string) {
-	logrus.Fatalln()
+	logrus.Fatalln(message)
 }

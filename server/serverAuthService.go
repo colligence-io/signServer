@@ -21,11 +21,9 @@ import (
 type AuthService struct {
 	instance *Instance
 
-	// stores appInfos for apps
-	appInfos map[string]*appClientInfo
-
-	// stores issued tokenIDs for appName
-	issuedTokens map[string]string
+	// stores sessions for apps
+	// key=appName, this prevents issueing multiple access token per app
+	sessions map[string]*authSession
 
 	// appName key
 	ctxAppNameKey *struct{ name string }
@@ -50,8 +48,7 @@ func NewAuthService(instance *Instance) *AuthService {
 	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
 	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
 
-	svc.appInfos = make(map[string]*appClientInfo)
-	svc.issuedTokens = make(map[string]string)
+	svc.sessions = make(map[string]*authSession)
 
 	return svc
 }
@@ -78,7 +75,7 @@ func (svc *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			if appName, ok := claims["sub"].(string); ok {
 				if tokenID, ok := claims["jti"].(string); ok {
-					if issuedToken, found := svc.issuedTokens[appName]; found && issuedToken == tokenID {
+					if session, found := svc.sessions[appName]; found && session.issuedToken == tokenID {
 						authed = true
 						ctx = context.WithValue(ctx, svc.ctxAppNameKey, appName)
 					}
@@ -114,7 +111,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 
 	var response struct {
 		Question string `json:"question"`
-		Expires  string `json:"expires"`
+		Expires  int64  `json:"expires"`
 	}
 
 	// Parse request
@@ -127,7 +124,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	appInfo, found := svc.appInfos[request.AppName]
+	session, found := svc.sessions[request.AppName]
 	if !found {
 		// Get appAuth secret from vault
 		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.VaultAuthPath + "/" + request.AppName)
@@ -171,12 +168,13 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 			return rr.UnauthorizedResponse
 		}
 
-		appInfo = &appClientInfo{
+		session = &authSession{
+			appName:     request.AppName,
 			keypair:     kp,
 			cidrChecker: ranger,
 		}
 
-		svc.appInfos[request.AppName] = appInfo
+		svc.sessions[request.AppName] = session
 	}
 
 	// get remote ip
@@ -185,30 +183,30 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	if !appInfo.checkCIDR(ip) {
+	if !session.checkCIDR(ip) {
 		return rr.UnauthorizedResponse
 	}
 
-	appInfo.lastRequestIP = ip
+	session.lastRequestIP = ip
 
 	// OK, seems proper access
 	logger.Println("introduce from ", req.RemoteAddr, " by ", request.AppName)
 
 	// generate random question
-	appInfo.lastQuestion = make([]byte, 32)
-	_, e := io.ReadFull(rand.Reader, appInfo.lastQuestion)
+	session.lastQuestion = make([]byte, 32)
+	_, e := io.ReadFull(rand.Reader, session.lastQuestion)
 
 	if e != nil {
 		return rr.ErrorResponse(e)
 	}
 
-	appInfo.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
+	session.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
 
 	// OK, send question
 	logger.Println("sending question to ", request.AppName)
 
-	response.Question = base64.StdEncoding.EncodeToString(appInfo.lastQuestion)
-	response.Expires = appInfo.lastQuestionExpires.Format(time.RFC3339)
+	response.Question = base64.StdEncoding.EncodeToString(session.lastQuestion)
+	response.Expires = session.lastQuestionExpires.Unix()
 
 	return rr.OkResponse(response)
 }
@@ -225,7 +223,9 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	}
 
 	var response struct {
-		JwtToken string `json:"welcomePresent"`
+		JwtToken     string            `json:"welcomePresent"`
+		KeyQuestions map[string]string `json:"welcomePackage"`
+		Expires      int64             `json:"expires"`
 	}
 
 	// Parse request
@@ -238,8 +238,8 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	// search appInfo
-	appInfo, found := svc.appInfos[request.AppName]
+	// search session
+	session, found := svc.sessions[request.AppName]
 	if !found {
 		return rr.UnauthorizedResponse
 	}
@@ -252,46 +252,85 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 
 	// FIXME : this may interfere proper handshake when introducer & answerer are different (even if both is proper)
 	// this can be changed for CIDR check
-	if !appInfo.lastRequestIP.Equal(ip) {
+	if !session.lastRequestIP.Equal(ip) {
 		return rr.UnauthorizedResponse
 	}
 
 	logger.Println("answer from ", req.RemoteAddr, " by ", request.AppName)
 
 	// check expiration
-	if appInfo.isQuestionExpired() {
+	if session.isQuestionExpired() {
 		return rr.KoResponse(http.StatusGone, "I forgot question. duh.")
 	}
 
 	// verify signature
-	if !appInfo.verifySignature(request.Signature) {
+	if !session.verifySignature(request.Signature) {
 		return rr.KoResponse(http.StatusNotAcceptable, "I don't like your answer.")
 	}
 
 	// generate tokenID from question
-	tokenID := hex.EncodeToString(appInfo.lastQuestion)
+	tokenID := hex.EncodeToString(session.lastQuestion)
+
+	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.JwtExpires)).Unix()
 
 	// build JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{
 		Id:        tokenID,
 		Subject:   request.AppName,
 		IssuedAt:  time.Now().UTC().Unix(),
-		ExpiresAt: time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.JwtExpires)).Unix(),
+		ExpiresAt: expires,
 	})
 
 	// sign JWT into JWS
-	tokenString, e := token.SignedString(svc.jwtSecretKey)
+	jwtString, e := token.SignedString(svc.jwtSecretKey)
 	if e != nil {
 		return rr.ErrorResponse(e)
 	}
 
+	// get keyID / type:address map
+	keymap, e := svc.instance.ks.GetKeyMap()
+
+	// welcomePackage
+	keyQuestions := make(map[string]string)
+
+	// quiz map stored in session
+	keyQuizMap := make(map[string]sessionQuiz)
+
+	for keyID, addrString := range keymap {
+
+		kqBytes := make([]byte, 32)
+		_, e := io.ReadFull(rand.Reader, kqBytes)
+
+		if e != nil {
+			return rr.ErrorResponse(e)
+		}
+
+		keyQuestion := base64.StdEncoding.EncodeToString(kqBytes)
+
+		keyAnswer, e := session.keypair.Sign(kqBytes)
+		if e != nil {
+			return rr.ErrorResponse(e)
+		}
+
+		keyQuestions[addrString] = keyQuestion
+
+		keyQuizMap[addrString] = sessionQuiz{
+			question: keyQuestion,
+			answer:   base64.StdEncoding.EncodeToString(keyAnswer),
+			keyID:    keyID,
+		}
+	}
+
 	// store issued token for authenticator
-	svc.issuedTokens[request.AppName] = tokenID
+	svc.sessions[request.AppName].issuedToken = tokenID
+	svc.sessions[request.AppName].keyQuizMap = keyQuizMap
 
 	// OK, send token
 	logger.Println("sending welcome present to ", request.AppName)
 
-	response.JwtToken = tokenString
+	response.JwtToken = jwtString
+	response.KeyQuestions = keyQuestions
+	response.Expires = expires
 
 	return rr.OkResponse(response)
 }

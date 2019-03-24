@@ -16,9 +16,8 @@ import (
 var logger = logrus.WithField("module", "WhiteBoxKeyStore")
 
 type Config struct {
-	WhiteBoxPath     string
-	AuthPath         string
-	SecretKeymapPath string
+	WhiteBoxPath string
+	AuthPath     string
 }
 
 type KeyStore struct {
@@ -134,29 +133,20 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 
 	keyID := ks.appIDtoKeyID(appID)
 
+	keyExists, e := ks.vc.Logical().Read(ks.config.WhiteBoxPath + "/" + keyID)
+	util.CheckAndDie(e)
+
+	if keyExists != nil {
+		util.Die("KeyPair already exists for appID " + appID)
+	}
+
 	vaultData := map[string]interface{}{
-		"keyID":   keyID,
 		"appID":   appID,
 		"symbol":  symbol,
 		"address": address,
 		"wb":      base64.StdEncoding.EncodeToString(wbBytes),
 	}
 	_, e = ks.vc.Logical().Write(ks.config.WhiteBoxPath+"/"+keyID, vaultData)
-	util.CheckAndDie(e)
-
-	keymapSecret, e := ks.vc.Logical().Read(ks.config.SecretKeymapPath)
-	util.CheckAndDie(e)
-
-	var keymap map[string]interface{}
-	if keymapSecret == nil || keymapSecret.Data == nil {
-		keymap = make(map[string]interface{})
-	} else {
-		keymap = keymapSecret.Data
-	}
-
-	keymap[symbol+":"+address] = keyID
-
-	_, e = ks.vc.Logical().Write(ks.config.SecretKeymapPath, keymap)
 	util.CheckAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
@@ -175,6 +165,10 @@ func (ks *KeyStore) ShowKeypairInfo(appID string) {
 
 	secret, e := ks.vc.Logical().Read(ks.config.WhiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
+
+	if secret == nil {
+		util.Die("KeyPair " + appID + " not exits")
+	}
 
 	symbol := secret.Data["symbol"].(string)
 	address := secret.Data["address"].(string)
@@ -215,4 +209,14 @@ func (ks *KeyStore) AddAppAuth(appName string, cidr string) {
 
 func (ks *KeyStore) appIDtoKeyID(appID string) string {
 	return hex.EncodeToString(util.Crypto.Sha256Hash(appID))
+}
+
+func (ks *KeyStore) GetKeyMap() (map[string]string, error) {
+	keymap := make(map[string]string)
+
+	for keyID, wb := range ks.storage {
+		keymap[keyID] = string(wb.bcType) + ":" + wb.address
+	}
+
+	return keymap, nil
 }

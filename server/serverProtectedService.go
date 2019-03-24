@@ -22,24 +22,24 @@ func NewProtectedService(instance *Instance, authService *AuthService) *Protecte
 
 // handlerClosure
 // closure to simplify http.HandlerFunc
-func (svcp *ProtectedService) handlerClosure(rw http.ResponseWriter, req *http.Request, handler func(appName string, req *http.Request) rr.ResponseEntity) {
+func (svcp *ProtectedService) handlerClosure(rw http.ResponseWriter, req *http.Request, handler func(session *authSession, req *http.Request) rr.ResponseEntity) {
 	appName, ok := req.Context().Value(svcp.authService.ctxAppNameKey).(string)
 	if !ok || appName == "" {
 		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
 		return
 	}
 
-	appInfo, found := svcp.authService.appInfos[appName]
+	session, found := svcp.authService.sessions[appName]
 	if !found {
 		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
 		return
 	}
-	if !appInfo.checkStringCIDR(req.RemoteAddr) {
+	if !session.checkStringCIDR(req.RemoteAddr) {
 		rr.WriteResponseEntity(rw, rr.UnauthorizedResponse)
 		return
 	}
 
-	rr.WriteResponseEntity(rw, handler(appName, req))
+	rr.WriteResponseEntity(rw, handler(session, req))
 }
 
 // KnockHandler
@@ -47,7 +47,7 @@ func (svcp *ProtectedService) handlerClosure(rw http.ResponseWriter, req *http.R
 func (svcp *ProtectedService) KnockHandler(rw http.ResponseWriter, req *http.Request) {
 	svcp.handlerClosure(rw, req, svcp.knock)
 }
-func (svcp *ProtectedService) knock(appName string, req *http.Request) rr.ResponseEntity {
+func (svcp *ProtectedService) knock(session *authSession, req *http.Request) rr.ResponseEntity {
 	return rr.OkResponse(time.Now().UTC().Unix())
 }
 
@@ -56,12 +56,12 @@ func (svcp *ProtectedService) knock(appName string, req *http.Request) rr.Respon
 func (svcp *ProtectedService) SignHandler(rw http.ResponseWriter, req *http.Request) {
 	svcp.handlerClosure(rw, req, svcp.sign)
 }
-func (svcp *ProtectedService) sign(appName string, req *http.Request) rr.ResponseEntity {
+func (svcp *ProtectedService) sign(session *authSession, req *http.Request) rr.ResponseEntity {
 	var request struct {
-		KeyID   string                     `json:"keyID"`
-		Type    trustSigner.BlockChainType `json:"type"`
-		Address string                     `json:"address"`
-		Data    string                     `json:"data"`
+		Type             trustSigner.BlockChainType `json:"type"`
+		Address          string                     `json:"address"`
+		RequestSignature string                     `json:"answer"`
+		Data             string                     `json:"data"`
 	}
 
 	var response struct {
@@ -73,7 +73,18 @@ func (svcp *ProtectedService) sign(appName string, req *http.Request) rr.Respons
 		return rr.ErrorResponse(err)
 	}
 
-	logger.Println("sign request from ", appName, " : ", request.Data)
+	logger.Println("sign request from ", session.appName, " : ", request.Data)
+
+	requestKey := string(request.Type) + ":" + request.Address
+
+	quiz, found := session.keyQuizMap[requestKey]
+	if !found {
+		return rr.KoResponse(http.StatusNotAcceptable, "")
+	}
+
+	if request.RequestSignature != quiz.answer {
+		return rr.KoResponse(http.StatusBadRequest, "")
+	}
 
 	// get data to sign
 	dataToSign, err := hex.DecodeString(request.Data)
@@ -82,8 +93,7 @@ func (svcp *ProtectedService) sign(appName string, req *http.Request) rr.Respons
 		return rr.ErrorResponse(err)
 	}
 
-	// get whitebox from
-	wb := svcp.instance.ks.GetWhiteBoxData(request.KeyID, request.Type)
+	wb := svcp.instance.ks.GetWhiteBoxData(quiz.keyID, request.Type)
 
 	if wb == nil {
 		return rr.KoResponse(http.StatusNotFound, "")
