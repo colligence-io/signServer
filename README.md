@@ -15,9 +15,6 @@ path "ss/auth/*" {
 path "ss/whitebox/*" {
   capabilities = ["read", "update", "delete", "create", "list"]
 }
-path "secret/credentials/signserver-keymap" {
-  capabilities = ["read", "update", "delete", "create", "list"]
-}
 EOF
 
 
@@ -54,8 +51,7 @@ vault write auth/userpass/users/signserver password=ss1234 policies=dedicated-si
         "password": "ss1234",
         "address": "http://127.0.0.1:8200",
         "whiteboxPath": "ss/whitebox",
-        "authPath": "ss/auth",
-        "secretKeymapPath": "secret/credentials/signserver-keymap"
+        "authPath": "ss/auth"
       }
     }</code></pre>
 2. run signServer
