@@ -73,7 +73,7 @@ func (svcp *ProtectedService) sign(session *authSession, req *http.Request) rr.R
 		return rr.ErrorResponse(err)
 	}
 
-	logger.Println("sign request from ", session.appName, " : ", request.Data)
+	logger.Info("sign request from ", session.appName, " : ", request.Data)
 
 	requestKey := string(request.Type) + ":" + request.Address
 

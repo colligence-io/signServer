@@ -133,14 +133,14 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		}
 
 		if appAuthSecret.Data == nil {
-			logger.Println("Broken AppAuth : Data is null - ", request.AppName)
+			logger.Error("Broken AppAuth : Data is null - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
 		// get bind_cidr
 		cidr, ok := appAuthSecret.Data["bind_cidr"].(string)
 		if !ok {
-			logger.Println("Broken AppAuth : CIDR not found - ", request.AppName)
+			logger.Error("Broken AppAuth : CIDR not found - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -149,7 +149,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 
 		e = ranger.Insert(cidranger.NewBasicRangerEntry(*network1))
 		if e != nil {
-			logger.Println("Broken AppAuth : CIDR parse error - ", request.AppName)
+			logger.Error("Broken AppAuth : CIDR parse error - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -158,13 +158,13 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		// maybe assertion needed for make sure
 		privateKey, ok := appAuthSecret.Data["privateKey"].(string)
 		if !ok {
-			logger.Println("Broken AppAuth : privateKey not found - ", request.AppName)
+			logger.Error("Broken AppAuth : privateKey not found - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
 		kp, e := stellarkp.Parse(privateKey)
 		if e != nil {
-			logger.Println("Broken AppAuth : privateKey parse error - ", request.AppName)
+			logger.Error("Broken AppAuth : privateKey parse error - ", request.AppName)
 			return rr.UnauthorizedResponse
 		}
 
@@ -190,7 +190,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	session.lastRequestIP = ip
 
 	// OK, seems proper access
-	logger.Println("introduce from ", req.RemoteAddr, " by ", request.AppName)
+	logger.Info("introduce from ", req.RemoteAddr, " by ", request.AppName)
 
 	// generate random question
 	session.lastQuestion = make([]byte, 32)
@@ -203,7 +203,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	session.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
 
 	// OK, send question
-	logger.Println("sending question to ", request.AppName)
+	logger.Info("sending question to ", request.AppName)
 
 	response.Question = base64.StdEncoding.EncodeToString(session.lastQuestion)
 	response.Expires = session.lastQuestionExpires.Unix()
@@ -256,7 +256,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	logger.Println("answer from ", req.RemoteAddr, " by ", request.AppName)
+	logger.Info("answer from ", req.RemoteAddr, " by ", request.AppName)
 
 	// check expiration
 	if session.isQuestionExpired() {
@@ -326,7 +326,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	svc.sessions[request.AppName].keyQuizMap = keyQuizMap
 
 	// OK, send token
-	logger.Println("sending welcome present to ", request.AppName)
+	logger.Info("sending welcome present to ", request.AppName)
 
 	response.JwtToken = jwtString
 	response.KeyQuestions = keyQuestions
