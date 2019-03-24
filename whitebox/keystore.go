@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/colligence-io/signServer/config"
 	"github.com/colligence-io/signServer/trustSigner"
 	"github.com/colligence-io/signServer/util"
 	"github.com/colligence-io/signServer/vault"
@@ -15,13 +16,13 @@ import (
 
 var logger = logrus.WithField("module", "WhiteBoxKeyStore")
 
-type Config struct {
-	WhiteBoxPath string
-	AuthPath     string
+type _config struct {
+	whiteBoxPath string
+	authPath     string
 }
 
 type KeyStore struct {
-	config *Config
+	config *_config
 
 	// vault client
 	vc *vault.Client
@@ -36,8 +37,14 @@ type whiteBox struct {
 	whiteBox *trustSigner.WhiteBox
 }
 
-func NewKeyStore(config Config, vaultClient *vault.Client) *KeyStore {
-	return &KeyStore{config: &config, vc: vaultClient}
+func NewKeyStore(cfg *config.Configuration, vaultClient *vault.Client) *KeyStore {
+	return &KeyStore{
+		config: &_config{
+			authPath:     cfg.Vault.AuthPath,
+			whiteBoxPath: cfg.Vault.WhiteBoxPath,
+		},
+		vc: vaultClient,
+	}
 }
 
 func (ks *KeyStore) Load() {
@@ -47,7 +54,7 @@ func (ks *KeyStore) Load() {
 
 	ks.storage = make(map[string]whiteBox)
 
-	ksList, e := ks.vc.Logical().List(ks.config.WhiteBoxPath)
+	ksList, e := ks.vc.Logical().List(ks.config.whiteBoxPath)
 	util.CheckAndDie(e)
 
 	if ksList == nil {
@@ -58,7 +65,7 @@ func (ks *KeyStore) Load() {
 	for _, ik := range ksList.Data["keys"].([]interface{}) {
 		keyID := ik.(string)
 
-		secret, e := ks.vc.Logical().Read(ks.config.WhiteBoxPath + "/" + keyID)
+		secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
 		util.CheckAndDie(e)
 
 		appID := secret.Data["appID"].(string)
@@ -133,7 +140,7 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 
 	keyID := ks.appIDtoKeyID(appID)
 
-	keyExists, e := ks.vc.Logical().Read(ks.config.WhiteBoxPath + "/" + keyID)
+	keyExists, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	if keyExists != nil {
@@ -146,7 +153,7 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 		"address": address,
 		"wb":      base64.StdEncoding.EncodeToString(wbBytes),
 	}
-	_, e = ks.vc.Logical().Write(ks.config.WhiteBoxPath+"/"+keyID, vaultData)
+	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, vaultData)
 	util.CheckAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
@@ -163,7 +170,7 @@ func (ks *KeyStore) ShowKeypairInfo(appID string) {
 
 	keyID := ks.appIDtoKeyID(appID)
 
-	secret, e := ks.vc.Logical().Read(ks.config.WhiteBoxPath + "/" + keyID)
+	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	if secret == nil {
@@ -197,7 +204,7 @@ func (ks *KeyStore) AddAppAuth(appName string, cidr string) {
 		"bind_cidr":  cidr,
 	}
 
-	_, e = ks.vc.Logical().Write(ks.config.AuthPath+"/"+appName, data)
+	_, e = ks.vc.Logical().Write(ks.config.authPath+"/"+appName, data)
 	util.CheckAndDie(e)
 
 	fmt.Println("SigningApp added")

@@ -49,6 +49,7 @@ vault write auth/userpass/users/signserver password=ss1234 policies=dedicated-si
       "vault": {
         "username": "signserver",
         "password": "ss1234",
+        "approle": "signserver",
         "address": "http://127.0.0.1:8200",
         "whiteboxPath": "ss/whitebox",
         "authPath": "ss/auth"

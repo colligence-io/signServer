@@ -43,7 +43,7 @@ func NewAuthService(instance *Instance) *AuthService {
 
 	svc.ctxAppNameKey = &struct{ name string }{"AppName"}
 
-	svc.jwtSecretKey = util.Crypto.Sha256Hash(svc.instance.config.JwtSecret)
+	svc.jwtSecretKey = util.Crypto.Sha256Hash(svc.instance.config.jwtSecret)
 
 	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
 	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
@@ -127,7 +127,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	session, found := svc.sessions[request.AppName]
 	if !found {
 		// Get appAuth secret from vault
-		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.VaultAuthPath + "/" + request.AppName)
+		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.vaultAuthPath + "/" + request.AppName)
 		if appAuthSecret == nil || e != nil {
 			return rr.UnauthorizedResponse
 		}
@@ -200,7 +200,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		return rr.ErrorResponse(e)
 	}
 
-	session.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.QuestionExpires))
+	session.lastQuestionExpires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.questionExpires))
 
 	// OK, send question
 	logger.Info("sending question to ", request.AppName)

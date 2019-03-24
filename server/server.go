@@ -3,6 +3,7 @@ package server
 import "C"
 import (
 	"fmt"
+	"github.com/colligence-io/signServer/config"
 	"github.com/colligence-io/signServer/rr"
 	"github.com/colligence-io/signServer/util"
 	"github.com/colligence-io/signServer/vault"
@@ -22,22 +23,32 @@ import (
 
 var logger = logrus.WithField("module", "Server")
 
-type Config struct {
-	VaultAuthPath   string
-	JwtSecret       string
+type _config struct {
+	vaultAuthPath   string
+	jwtSecret       string
 	JwtExpires      int
-	QuestionExpires int
-	AccessLogWriter io.Writer
+	questionExpires int
+	accessLogWriter io.Writer
 }
 
 type Instance struct {
-	config *Config
+	config *_config
 	vc     *vault.Client
 	ks     *whitebox.KeyStore
 }
 
-func NewInstance(config Config, vaultClient *vault.Client, keyStore *whitebox.KeyStore) *Instance {
-	return &Instance{config: &config, vc: vaultClient, ks: keyStore}
+func NewInstance(cfg *config.Configuration, vaultClient *vault.Client, keyStore *whitebox.KeyStore) *Instance {
+	return &Instance{
+		config: &_config{
+			vaultAuthPath:   cfg.Vault.AuthPath,
+			jwtSecret:       cfg.Auth.JwtSecret,
+			JwtExpires:      cfg.Auth.JwtExpires,
+			questionExpires: cfg.Auth.QuestionExpires,
+			accessLogWriter: cfg.Log.GetAccessLogWriter(),
+		},
+		vc: vaultClient,
+		ks: keyStore,
+	}
 }
 
 func (instance *Instance) Launch(port int) {
@@ -50,8 +61,8 @@ func (instance *Instance) Launch(port int) {
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	if instance.config.AccessLogWriter != nil {
-		r.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{Logger: log.New(instance.config.AccessLogWriter, "", log.LstdFlags), NoColor: false}))
+	if instance.config.accessLogWriter != nil {
+		r.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{Logger: log.New(instance.config.accessLogWriter, "", log.LstdFlags), NoColor: false}))
 	} else {
 		r.Use(middleware.Logger)
 	}
@@ -84,7 +95,7 @@ func (instance *Instance) Launch(port int) {
 	instance.ks.Load()
 	instance.ks.LogKeyStoreEntries()
 
-	logger.Info("SignServer started : listen", port)
+	logger.Info("SignServer started : listen ", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
 	util.CheckAndDie(err)
 }
