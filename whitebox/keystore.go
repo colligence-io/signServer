@@ -111,7 +111,7 @@ func (ks *KeyStore) GetWhiteBoxData(keyID string, bcType trustSigner.BlockChainT
 
 func (ks *KeyStore) LogKeyStoreEntries() {
 	for keyID, kp := range ks.storage {
-		logger.Info("KeyPair ", C.GoString((*C.char)(kp.whiteBox.AppID)), " : ", keyID, kp.bcType, kp.address)
+		logger.Info("KeyPair ", C.GoString((*C.char)(kp.whiteBox.AppID)), " : ", keyID, " ", kp.bcType, " ", kp.address)
 	}
 }
 

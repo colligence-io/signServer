@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -121,16 +120,4 @@ func (instance *Instance) dontPanic(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(fn)
-}
-
-func getIPfromAddress(addr string) net.IP {
-	host, _, e := net.SplitHostPort(addr)
-	if e != nil {
-		return nil
-	}
-	if host != "" {
-		return net.ParseIP(host)
-	} else {
-		return net.ParseIP(addr)
-	}
 }

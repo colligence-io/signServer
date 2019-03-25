@@ -122,6 +122,8 @@ func (vc *Client) StartAutoRenew() {
 			} else {
 				vc.setAuth(newAppRoleAuth.Auth)
 			}
+
+			// TODO : add WithCancel Context to graceful shutdown
 		}
 	}()
 }
