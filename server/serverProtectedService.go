@@ -79,12 +79,12 @@ func (svcp *ProtectedService) sign(session *auth.Session, req *http.Request) rr.
 	// get data to sign
 	dataToSign, err := hex.DecodeString(request.Data)
 
-	if len(dataToSign)%32 != 0 {
-		return rr.KoResponse(http.StatusBadRequest, "data length must be 32*N")
-	}
-
 	if err != nil {
 		return rr.ErrorResponse(err)
+	}
+
+	if len(dataToSign)%32 != 0 {
+		return rr.KoResponse(http.StatusBadRequest, "data length must be 32*N")
 	}
 
 	wb := svcp.instance.ks.GetWhiteBoxData(quiz.KeyID, request.Type)
@@ -94,7 +94,10 @@ func (svcp *ProtectedService) sign(session *auth.Session, req *http.Request) rr.
 	}
 
 	// sign message with trustSigner
-	signature := trustSigner.GetWBSignatureData(wb, request.Type, dataToSign)
+	signature, err := trustSigner.GetWBSignatureData(wb, request.Type, dataToSign)
+	if err != nil {
+		return rr.ErrorResponse(err)
+	}
 
 	// OK, send signature
 	response.Signature = hex.EncodeToString(signature)

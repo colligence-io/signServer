@@ -27,13 +27,18 @@ func TestTS(t *testing.T) {
 		fmt.Println("PublicKey for", k, ":", publicKey)
 		fmt.Println()
 
-		message := make([]byte, 32)
+		message := make([]byte, 64)
+
+		//message[32] = '1'
 
 		_, _ = io.ReadFull(rand.Reader, message)
 
-		signatureData := trustSigner.GetWBSignatureData(wbData, v, message)
-
-		fmt.Println("Signature for 'message' : ", hex.EncodeToString(signatureData))
-		fmt.Println()
+		signatureData, err := trustSigner.GetWBSignatureData(wbData, v, message)
+		if err != nil {
+			fmt.Println("Sign Failed : ", err)
+		} else {
+			fmt.Println("Signature for 'message' : ", hex.EncodeToString(signatureData))
+			fmt.Println()
+		}
 	}
 }
