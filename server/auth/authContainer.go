@@ -103,6 +103,7 @@ func (q *Question) IsExpired() bool {
 type Session struct {
 	JWS     string
 	AppName string
+	// key = symbol:address
 	Quizzes map[string]Quiz
 	Expires time.Time
 }

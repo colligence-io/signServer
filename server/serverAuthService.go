@@ -320,10 +320,10 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	keymap, e := svc.instance.ks.GetKeyMap()
 
 	// welcomePackage
-	keyQuestions := make(map[string]string)
+	welcomePackage := make(map[string]string)
 
 	// quiz map stored in session
-	keyQuizMap := make(map[string]auth.Quiz)
+	sessionQuizMap := make(map[string]auth.Quiz)
 
 	for keyID, addrString := range keymap {
 
@@ -341,9 +341,9 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 			return rr.ErrorResponse(e)
 		}
 
-		keyQuestions[addrString] = keyQuestion
+		welcomePackage[addrString] = keyQuestion
 
-		keyQuizMap[addrString] = auth.Quiz{
+		sessionQuizMap[addrString] = auth.Quiz{
 			Question: keyQuestion,
 			Answer:   base64.StdEncoding.EncodeToString(keyAnswer),
 			KeyID:    keyID,
@@ -353,7 +353,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	app.Sessions[tokenID] = auth.Session{
 		JWS:     jwsString,
 		AppName: request.AppName,
-		Quizzes: keyQuizMap,
+		Quizzes: sessionQuizMap,
 		Expires: expires,
 	}
 
@@ -361,7 +361,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	logger.Info("sending welcome present to ", request.AppName)
 
 	response.JWS = jwsString
-	response.KeyQuestions = keyQuestions
+	response.KeyQuestions = welcomePackage
 	response.Expires = expires.Unix()
 
 	return rr.OkResponse(response)

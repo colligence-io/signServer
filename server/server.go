@@ -92,7 +92,9 @@ func (instance *Instance) Launch(port int) {
 	})
 
 	instance.ks.Load()
-	instance.ks.LogKeyStoreEntries()
+	for _, _ksd := range instance.ks.GetKeyStoreListDescription() {
+		logger.Info(_ksd)
+	}
 
 	logger.Info("SignServer started : listen ", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)

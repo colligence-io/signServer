@@ -109,10 +109,14 @@ func (ks *KeyStore) GetWhiteBoxData(keyID string, bcType trustSigner.BlockChainT
 	}
 }
 
-func (ks *KeyStore) LogKeyStoreEntries() {
+func (ks *KeyStore) GetKeyStoreListDescription() []string {
+	kplist := make([]string, 0, len(ks.storage))
+
 	for keyID, kp := range ks.storage {
-		logger.Info("KeyPair ", C.GoString((*C.char)(kp.whiteBox.AppID)), " : ", keyID, " ", kp.bcType, " ", kp.address)
+		kplist = append(kplist, fmt.Sprint("KeyPair ", C.GoString((*C.char)(kp.whiteBox.AppID)), " : ", keyID, " ", kp.bcType, " ", kp.address))
 	}
+
+	return kplist
 }
 
 /*

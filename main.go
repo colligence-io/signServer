@@ -17,6 +17,7 @@ const (
 	MODE_UNLOCK      Mode = "unlock"
 	MODE_KEYPAIRGEN  Mode = "kpgen"
 	MODE_KEYPAIRSHOW Mode = "kpshow"
+	MODE_KEYPAIRLIST Mode = "kplist"
 	MODE_APPADD      Mode = "appadd"
 )
 
@@ -25,6 +26,7 @@ var Modes = map[string]Mode{
 	string(MODE_UNLOCK):      MODE_UNLOCK,
 	string(MODE_KEYPAIRGEN):  MODE_KEYPAIRGEN,
 	string(MODE_KEYPAIRSHOW): MODE_KEYPAIRSHOW,
+	string(MODE_KEYPAIRLIST): MODE_KEYPAIRLIST,
 	string(MODE_APPADD):      MODE_APPADD,
 }
 
@@ -78,6 +80,11 @@ func main() {
 				usage()
 			}
 			wbks.AddAppAuth(os.Args[2], os.Args[3])
+		case MODE_KEYPAIRLIST:
+			wbks.Load()
+			for _, _ksd := range wbks.GetKeyStoreListDescription() {
+				fmt.Println(_ksd)
+			}
 		default:
 			usage()
 		}
