@@ -32,10 +32,10 @@ type KeyStore struct {
 	vc *vault.Client
 
 	// KeyID - keyPair map
-	storage map[string]whiteBox
+	storage map[string]keyPair
 }
 
-type whiteBox struct {
+type keyPair struct {
 	bcType   trustSigner.BlockChainType
 	address  string
 	whiteBox *trustSigner.WhiteBox
@@ -63,7 +63,7 @@ func (ks *KeyStore) Load() {
 		ks.vc.Connect()
 	}
 
-	ks.storage = make(map[string]whiteBox)
+	ks.storage = make(map[string]keyPair)
 
 	ksList, e := ks.vc.Logical().List(ks.config.whiteBoxPath)
 	util.CheckAndDie(e)
@@ -102,7 +102,7 @@ func (ks *KeyStore) Load() {
 			util.CheckAndDie(fmt.Errorf("cannot load keypair %s : address verification failed %s != %s", appID, address, derivedAddress))
 		}
 
-		ks.storage[keyID] = whiteBox{
+		ks.storage[keyID] = keyPair{
 			bcType:   bcType,
 			address:  derivedAddress,
 			whiteBox: wb,
