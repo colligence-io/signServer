@@ -4,7 +4,7 @@ import "C"
 import (
 	"fmt"
 	"github.com/colligence-io/signServer/config"
-	"github.com/colligence-io/signServer/rr"
+	"github.com/colligence-io/signServer/server/rr"
 	"github.com/colligence-io/signServer/util"
 	"github.com/colligence-io/signServer/vault"
 	"github.com/colligence-io/signServer/whitebox"

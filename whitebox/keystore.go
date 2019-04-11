@@ -2,8 +2,10 @@ package whitebox
 
 import "C"
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/colligence-io/signServer/config"
 	"github.com/colligence-io/signServer/trustSigner"
@@ -11,7 +13,9 @@ import (
 	"github.com/colligence-io/signServer/vault"
 	"github.com/sirupsen/logrus"
 	stellarkp "github.com/stellar/go/keypair"
+	"io/ioutil"
 	"net"
+	"os"
 )
 
 var logger = logrus.WithField("module", "WhiteBoxKeyStore")
@@ -35,6 +39,13 @@ type whiteBox struct {
 	bcType   trustSigner.BlockChainType
 	address  string
 	whiteBox *trustSigner.WhiteBox
+}
+
+type backupData struct {
+	AppID    string `json:"appID"`
+	Symbol   string `json:"symbol"`
+	Address  string `json:"address"`
+	WhiteBox string `json:"whitebox"`
 }
 
 func NewKeyStore(cfg *config.Configuration, vaultClient *vault.Client) *KeyStore {
@@ -81,10 +92,8 @@ func (ks *KeyStore) Load() {
 
 		wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
-		publicKey := trustSigner.GetWBPublicKey(wb, bcType)
-		if publicKey == "" {
-			util.CheckAndDie(fmt.Errorf("cannot load keypair %s : empty publicKey", appID))
-		}
+		publicKey, e := trustSigner.GetWBPublicKey(wb, bcType)
+		util.CheckAndDie(e)
 
 		derivedAddress, err := trustSigner.DeriveAddress(bcType, publicKey)
 		util.CheckAndDie(err)
@@ -133,11 +142,13 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 		return
 	}
 
-	wbBytes := trustSigner.GetWBInitializeData(appID)
+	wbBytes, e := trustSigner.GetWBInitializeData(appID)
+	util.CheckAndDie(e)
 
 	wb := trustSigner.ConvertToWhiteBox(appID, wbBytes)
 
-	key := trustSigner.GetWBPublicKey(wb, bcType)
+	key, e := trustSigner.GetWBPublicKey(wb, bcType)
+	util.CheckAndDie(e)
 
 	address, e := trustSigner.DeriveAddress(bcType, key)
 	util.CheckAndDie(e)
@@ -151,13 +162,8 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 		util.Die("KeyPair already exists for appID " + appID)
 	}
 
-	vaultData := map[string]interface{}{
-		"appID":   appID,
-		"symbol":  symbol,
-		"address": address,
-		"wb":      base64.StdEncoding.EncodeToString(wbBytes),
-	}
-	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, vaultData)
+	// store to vault
+	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, toVaultData(appID, symbol, address, base64.StdEncoding.EncodeToString(wbBytes)))
 	util.CheckAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
@@ -165,6 +171,15 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 	fmt.Println("KeyID :", keyID)
 	fmt.Println("BlockChainType :", string(bcType))
 	fmt.Println("Address :", address)
+}
+
+func toVaultData(appID string, symbol string, address string, wbBase64 string) map[string]interface{} {
+	return map[string]interface{}{
+		"appID":   appID,
+		"symbol":  symbol,
+		"address": address,
+		"wb":      wbBase64,
+	}
 }
 
 func (ks *KeyStore) ShowKeypairInfo(appID string) {
@@ -230,4 +245,112 @@ func (ks *KeyStore) GetKeyMap() (map[string]string, error) {
 	}
 
 	return keymap, nil
+}
+
+func (ks *KeyStore) BackupKeyPair(appID string) {
+	if !ks.vc.IsConnected() {
+		ks.vc.Connect()
+	}
+
+	keyID := ks.appIDtoKeyID(appID)
+	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	util.CheckAndDie(e)
+
+	secretAppID, ok := secret.Data["appID"].(string)
+	if !ok {
+		util.Die("broken data, appID is not string")
+	}
+	secretSymbol, ok := secret.Data["symbol"].(string)
+	if !ok {
+		util.Die("broken data, symbol is not string")
+	}
+	secretAddress, ok := secret.Data["address"].(string)
+	if !ok {
+		util.Die("broken data, address is not string")
+	}
+	secretWbBase64, ok := secret.Data["wb"].(string)
+	if !ok {
+		util.Die("broken data, wb is not string")
+	}
+
+	_, found := trustSigner.BCTypes[secretSymbol]
+	if !found {
+		util.CheckAndDie(fmt.Errorf("cannot load keypair %s : BlockChainType %s is invalid", appID, secretSymbol))
+	}
+
+	jsonData, e := json.Marshal(backupData{
+		AppID:    secretAppID,
+		Symbol:   secretSymbol,
+		Address:  secretAddress,
+		WhiteBox: secretWbBase64,
+	})
+	util.CheckAndDie(e)
+
+	e = ioutil.WriteFile("wb_"+keyID+".json", jsonData, 0600)
+	util.CheckAndDie(e)
+
+	fmt.Println("Whitebox data backup file : wb_" + keyID + ".json")
+}
+
+func (ks *KeyStore) RecoverKeyPair(filePath string) {
+	if !ks.vc.IsConnected() {
+		ks.vc.Connect()
+	}
+
+	jsonFile, e := os.Open(filePath)
+	util.CheckAndDie(e)
+	backupBytes, e := ioutil.ReadAll(jsonFile)
+	util.CheckAndDie(e)
+
+	var backup backupData
+	e = json.Unmarshal(backupBytes, &backup)
+	util.CheckAndDie(e)
+
+	keyID := ks.appIDtoKeyID(backup.AppID)
+
+	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	util.CheckAndDie(e)
+
+	if secret != nil && secret.Data != nil {
+		fmt.Print(backup.AppID, " already stored in vault, overwrite? [YES/no] : ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		yesno := scanner.Text()
+
+		if yesno != "YES" {
+			util.Die("Canceled")
+		}
+	}
+
+	// check integrity
+	bcType, found := trustSigner.BCTypes[backup.Symbol]
+	if !found {
+		fmt.Println("blockchain type not supported :", backup.Symbol)
+		return
+	}
+
+	wbBytes, e := base64.StdEncoding.DecodeString(backup.WhiteBox)
+	util.CheckAndDie(e)
+
+	whitebox := trustSigner.ConvertToWhiteBox(backup.AppID, wbBytes)
+
+	publicKey, e := trustSigner.GetWBPublicKey(whitebox, bcType)
+	util.CheckAndDie(e)
+
+	derivedAddress, e := trustSigner.DeriveAddress(bcType, publicKey)
+	util.CheckAndDie(e)
+
+	if backup.Address != derivedAddress {
+		util.Die("backup data might be broken, address not match")
+	}
+
+	// store to vault
+	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, toVaultData(backup.AppID, backup.Symbol, backup.Address, backup.WhiteBox))
+	util.CheckAndDie(e)
+
+	fmt.Println("Whitebox Keypair Recovered")
+	fmt.Println("AppID :", backup.AppID)
+	fmt.Println("KeyID :", keyID)
+	fmt.Println("BlockChainType :", string(bcType))
+	fmt.Println("Address :", backup.Address)
 }

@@ -2,8 +2,8 @@ package server
 
 import (
 	"encoding/hex"
-	"github.com/colligence-io/signServer/rr"
 	"github.com/colligence-io/signServer/server/auth"
+	"github.com/colligence-io/signServer/server/rr"
 	"github.com/colligence-io/signServer/trustSigner"
 	"net/http"
 	"time"
