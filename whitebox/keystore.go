@@ -20,13 +20,8 @@ import (
 
 var logger = logrus.WithField("module", "WhiteBoxKeyStore")
 
-type _config struct {
-	whiteBoxPath string
-	authPath     string
-}
-
 type KeyStore struct {
-	config *_config
+	config *config.Configuration
 
 	// vault client
 	vc *vault.Client
@@ -50,11 +45,8 @@ type backupData struct {
 
 func NewKeyStore(cfg *config.Configuration, vaultClient *vault.Client) *KeyStore {
 	return &KeyStore{
-		config: &_config{
-			authPath:     cfg.Vault.AuthPath,
-			whiteBoxPath: cfg.Vault.WhiteBoxPath,
-		},
-		vc: vaultClient,
+		config: cfg,
+		vc:     vaultClient,
 	}
 }
 
@@ -65,7 +57,7 @@ func (ks *KeyStore) Load() {
 
 	ks.storage = make(map[string]keyPair)
 
-	ksList, e := ks.vc.Logical().List(ks.config.whiteBoxPath)
+	ksList, e := ks.vc.Logical().List(ks.config.Vault.WhiteBoxPath)
 	util.CheckAndDie(e)
 
 	if ksList == nil {
@@ -76,7 +68,7 @@ func (ks *KeyStore) Load() {
 	for _, ik := range ksList.Data["keys"].([]interface{}) {
 		keyID := ik.(string)
 
-		secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+		secret, e := ks.vc.Logical().Read(ks.config.Vault.WhiteBoxPath + "/" + keyID)
 		util.CheckAndDie(e)
 
 		appID := secret.Data["appID"].(string)
@@ -95,7 +87,7 @@ func (ks *KeyStore) Load() {
 		publicKey, e := trustSigner.GetWBPublicKey(wb, bcType)
 		util.CheckAndDie(e)
 
-		derivedAddress, err := trustSigner.DeriveAddress(bcType, publicKey)
+		derivedAddress, err := trustSigner.DeriveAddress(bcType, publicKey, ks.config.Server.BlockChainNetwork)
 		util.CheckAndDie(err)
 
 		if derivedAddress != address {
@@ -150,12 +142,12 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 	key, e := trustSigner.GetWBPublicKey(wb, bcType)
 	util.CheckAndDie(e)
 
-	address, e := trustSigner.DeriveAddress(bcType, key)
+	address, e := trustSigner.DeriveAddress(bcType, key, ks.config.Server.BlockChainNetwork)
 	util.CheckAndDie(e)
 
 	keyID := ks.appIDtoKeyID(appID)
 
-	keyExists, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	keyExists, e := ks.vc.Logical().Read(ks.config.Vault.WhiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	if keyExists != nil {
@@ -163,7 +155,7 @@ func (ks *KeyStore) GenerateKeypair(appID string, symbol string) {
 	}
 
 	// store to vault
-	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, toVaultData(appID, symbol, address, base64.StdEncoding.EncodeToString(wbBytes)))
+	_, e = ks.vc.Logical().Write(ks.config.Vault.WhiteBoxPath+"/"+keyID, toVaultData(appID, symbol, address, base64.StdEncoding.EncodeToString(wbBytes)))
 	util.CheckAndDie(e)
 
 	fmt.Println("Whitebox Keypair Generated")
@@ -189,7 +181,7 @@ func (ks *KeyStore) ShowKeypairInfo(appID string) {
 
 	keyID := ks.appIDtoKeyID(appID)
 
-	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	secret, e := ks.vc.Logical().Read(ks.config.Vault.WhiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	if secret == nil {
@@ -223,7 +215,7 @@ func (ks *KeyStore) AddAppAuth(appName string, cidr string) {
 		"bind_cidr":  cidr,
 	}
 
-	_, e = ks.vc.Logical().Write(ks.config.authPath+"/"+appName, data)
+	_, e = ks.vc.Logical().Write(ks.config.Vault.AuthPath+"/"+appName, data)
 	util.CheckAndDie(e)
 
 	fmt.Println("SigningApp added")
@@ -253,7 +245,7 @@ func (ks *KeyStore) BackupKeyPair(appID string) {
 	}
 
 	keyID := ks.appIDtoKeyID(appID)
-	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	secret, e := ks.vc.Logical().Read(ks.config.Vault.WhiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	secretAppID, ok := secret.Data["appID"].(string)
@@ -308,7 +300,7 @@ func (ks *KeyStore) RecoverKeyPair(filePath string) {
 
 	keyID := ks.appIDtoKeyID(backup.AppID)
 
-	secret, e := ks.vc.Logical().Read(ks.config.whiteBoxPath + "/" + keyID)
+	secret, e := ks.vc.Logical().Read(ks.config.Vault.WhiteBoxPath + "/" + keyID)
 	util.CheckAndDie(e)
 
 	if secret != nil && secret.Data != nil {
@@ -337,7 +329,7 @@ func (ks *KeyStore) RecoverKeyPair(filePath string) {
 	publicKey, e := trustSigner.GetWBPublicKey(whitebox, bcType)
 	util.CheckAndDie(e)
 
-	derivedAddress, e := trustSigner.DeriveAddress(bcType, publicKey)
+	derivedAddress, e := trustSigner.DeriveAddress(bcType, publicKey, ks.config.Server.BlockChainNetwork)
 	util.CheckAndDie(e)
 
 	if backup.Address != derivedAddress {
@@ -345,7 +337,7 @@ func (ks *KeyStore) RecoverKeyPair(filePath string) {
 	}
 
 	// store to vault
-	_, e = ks.vc.Logical().Write(ks.config.whiteBoxPath+"/"+keyID, toVaultData(backup.AppID, backup.Symbol, backup.Address, backup.WhiteBox))
+	_, e = ks.vc.Logical().Write(ks.config.Vault.WhiteBoxPath+"/"+keyID, toVaultData(backup.AppID, backup.Symbol, backup.Address, backup.WhiteBox))
 	util.CheckAndDie(e)
 
 	fmt.Println("Whitebox Keypair Recovered")

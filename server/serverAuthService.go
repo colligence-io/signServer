@@ -42,7 +42,7 @@ func NewAuthService(instance *Instance) *AuthService {
 
 	svc.ctxSessionKey = &struct{ name string }{"SESSION"}
 
-	svc.jwtSecretKey = util.Crypto.Sha256Hash(svc.instance.config.jwtSecret)
+	svc.jwtSecretKey = util.Crypto.Sha256Hash(svc.instance.config.Auth.JwtSecret)
 
 	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
 	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
@@ -139,7 +139,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	app, found := svc.authContainer.GetApp(request.AppName)
 	if !found {
 		// Get appAuth secret from vault
-		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.vaultAuthPath + "/" + request.AppName)
+		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.Vault.AuthPath + "/" + request.AppName)
 		if appAuthSecret == nil || e != nil {
 			return rr.UnauthorizedResponse
 		}
@@ -209,7 +209,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	tokenID := base64.StdEncoding.EncodeToString(qbytes)
 
 	question := auth.Question{}
-	question.Expires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.questionExpires))
+	question.Expires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.QuestionExpires))
 	question.RequestIP = ip
 
 	app.Questions[tokenID] = question
@@ -300,7 +300,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	// use question hex string as jti
 	tokenID := request.Question
 
-	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.JwtExpires))
+	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.JwtExpires))
 
 	// build JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{

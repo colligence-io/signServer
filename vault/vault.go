@@ -11,15 +11,8 @@ import (
 
 var logger = logrus.WithField("module", "VaultClient")
 
-type _config struct {
-	address  string
-	username string
-	password string
-	appRole  string
-}
-
 type Client struct {
-	config    *_config
+	config    *config.Configuration
 	client    *vault.Client
 	connected bool
 	auth      *vault.SecretAuth
@@ -27,30 +20,25 @@ type Client struct {
 
 func NewClient(cfg *config.Configuration) *Client {
 	return &Client{
-		config: &_config{
-			address:  cfg.Vault.Address,
-			username: cfg.Vault.Username,
-			password: cfg.Vault.Password,
-			appRole:  cfg.Vault.AppRole,
-		},
+		config: cfg,
 	}
 }
 
 func (vc *Client) Connect() {
 	client, e := vault.NewClient(&vault.Config{
-		Address: vc.config.address,
+		Address: vc.config.Vault.Address,
 	})
 	util.CheckAndPanic(e)
 
-	logger.Info("Connected to vault : ", vc.config.address)
+	logger.Info("Connected to vault : ", vc.config.Vault.Address)
 
-	password := map[string]interface{}{"password": vc.config.password}
+	password := map[string]interface{}{"password": vc.config.Vault.Password}
 
-	userpassAuth, e := client.Logical().Write("auth/userpass/login/"+vc.config.username, password)
+	userpassAuth, e := client.Logical().Write("auth/userpass/login/"+vc.config.Vault.Username, password)
 	util.CheckAndPanic(e)
 
 	client.SetToken(userpassAuth.Auth.ClientToken)
-	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vc.config.appRole + "/role-id")
+	roleIDsecret, e := client.Logical().Read("auth/approle/role/" + vc.config.Vault.AppRole + "/role-id")
 	util.CheckAndPanic(e)
 
 	roleID, found := roleIDsecret.Data["role_id"]
@@ -58,7 +46,7 @@ func (vc *Client) Connect() {
 		util.CheckAndPanic(errors.New("role id check failed"))
 	}
 
-	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vc.config.appRole+"/secret-id", nil)
+	secretIDsecret, e := client.Logical().Write("auth/approle/role/"+vc.config.Vault.AppRole+"/secret-id", nil)
 	util.CheckAndPanic(e)
 
 	secretID, found := secretIDsecret.Data["secret_id"]

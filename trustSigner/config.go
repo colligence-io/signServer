@@ -8,6 +8,11 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+type BlockChainNetworkType string
+
+const MAINNET BlockChainNetworkType = "mainnet"
+const TESTNET BlockChainNetworkType = "testnet"
+
 type BlockChainType string
 
 const (
@@ -26,20 +31,20 @@ var bcConfig = map[BlockChainType]struct {
 	PublicKeyLength int
 	SignatureLength int
 	HDDepth         int
-	Address         func(publicKey string) (string, error)
+	Address         func(publicKey string, network BlockChainNetworkType) (string, error)
 }{
 	BTC: {
 		PublicKeyLength: 111,
 		SignatureLength: 65,
 		HDDepth:         5,
-		Address: func(publicKey string) (string, error) {
+		Address: func(publicKey string, network BlockChainNetworkType) (string, error) {
 			wallet, err := hd.FromBIP32ExtendedKey(publicKey)
 			if err != nil {
 				return "", nil
 			}
 
 			var netParam *chaincfg.Params
-			if bytes.Compare(wallet.Vbytes[:], chaincfg.TestNet3Params.HDPublicKeyID[:]) == 0 || bytes.Compare(wallet.Vbytes[:], chaincfg.TestNet3Params.HDPrivateKeyID[:]) == 0 {
+			if network != MAINNET || bytes.Compare(wallet.Vbytes[:], chaincfg.TestNet3Params.HDPublicKeyID[:]) == 0 || bytes.Compare(wallet.Vbytes[:], chaincfg.TestNet3Params.HDPrivateKeyID[:]) == 0 {
 				netParam = &chaincfg.TestNet3Params
 			} else {
 				netParam = &chaincfg.MainNetParams
@@ -57,7 +62,7 @@ var bcConfig = map[BlockChainType]struct {
 		PublicKeyLength: 111,
 		SignatureLength: 65,
 		HDDepth:         5,
-		Address: func(publicKey string) (string, error) {
+		Address: func(publicKey string, network BlockChainNetworkType) (string, error) {
 			wallet, err := hd.FromBIP32ExtendedKey(publicKey)
 			if err != nil {
 				return "", err
@@ -76,8 +81,17 @@ var bcConfig = map[BlockChainType]struct {
 		PublicKeyLength: 56,
 		SignatureLength: 64,
 		HDDepth:         3,
-		Address: func(publicKey string) (string, error) {
+		Address: func(publicKey string, network BlockChainNetworkType) (string, error) {
 			return publicKey, nil
 		},
 	},
+}
+
+func chooseNetwork(bcNetwork string) BlockChainNetworkType {
+	if bcNetwork == (string)(MAINNET) {
+		return MAINNET
+	} else {
+		return TESTNET
+	}
+
 }

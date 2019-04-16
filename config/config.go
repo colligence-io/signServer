@@ -19,15 +19,16 @@ const RAWCONFIGFILE = "config.json"
 const RAWCONFIGFILEREMOVE = "config.json.REMOVE"
 
 type Configuration struct {
-	Log   LogConfig   `json:"log"`
-	Auth  AuthConfig  `json:"auth"`
-	Vault VaultConfig `json:"vault"`
+	Server ServerConfig `json:"server"`
+	Auth   AuthConfig   `json:"auth"`
+	Vault  VaultConfig  `json:"vault"`
 }
 
-type LogConfig struct {
-	Path       string `json:"path"`
-	AccessLog  string `json:"access"`
-	ServiceLog string `json:"service"`
+type ServerConfig struct {
+	LogPath           string `json:"log_path"`
+	LogAccess         string `json:"log_access"`
+	LogService        string `json:"log_service"`
+	BlockChainNetwork string `json:"bc_network"`
 }
 
 type AuthConfig struct {
@@ -103,18 +104,18 @@ func GetConfig(key []byte) (*Configuration, error) {
 		return nil, errors.New("incorrect unlock key")
 	}
 
-	setLogger(&config.Log)
+	setLogger(&config.Server)
 
 	return config, nil
 }
 
-func setLogger(cfg *LogConfig) {
+func setLogger(cfg *ServerConfig) {
 	logrus.SetOutput(os.Stdout)
 
-	if cfg.ServiceLog != "" {
+	if cfg.LogService != "" {
 		path := getLogPath(cfg)
-		if path != "" && cfg.ServiceLog != "" {
-			if file, err := os.OpenFile(path+"/"+cfg.ServiceLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		if path != "" && cfg.LogService != "" {
+			if file, err := os.OpenFile(path+"/"+cfg.LogService, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
 				logrus.SetOutput(io.MultiWriter(file, os.Stdout))
 			} else {
 				logrus.Warn("Failed to open service log to file, using default stdout")
@@ -123,11 +124,11 @@ func setLogger(cfg *LogConfig) {
 	}
 }
 
-func (cfg *LogConfig) GetAccessLogWriter() io.Writer {
-	if cfg.AccessLog != "" {
+func (cfg *ServerConfig) GetAccessLogWriter() io.Writer {
+	if cfg.LogAccess != "" {
 		path := getLogPath(cfg)
-		if path != "" && cfg.AccessLog != "" {
-			file, err := os.OpenFile(path+"/"+cfg.AccessLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if path != "" && cfg.LogAccess != "" {
+			file, err := os.OpenFile(path+"/"+cfg.LogAccess, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 			if err == nil {
 				return io.MultiWriter(file, os.Stdout)
 			} else {
@@ -138,8 +139,8 @@ func (cfg *LogConfig) GetAccessLogWriter() io.Writer {
 	return nil
 }
 
-func getLogPath(cfg *LogConfig) string {
-	var path = cfg.Path
+func getLogPath(cfg *ServerConfig) string {
+	var path = cfg.LogPath
 
 	if path == "" {
 		path = "."

@@ -26,8 +26,8 @@ type WhiteBox struct {
 	Pointer *C.uchar
 }
 
-func DeriveAddress(bcType BlockChainType, publicKey string) (string, error) {
-	return bcConfig[bcType].Address(publicKey)
+func DeriveAddress(bcType BlockChainType, publicKey string, bcNetwork string) (string, error) {
+	return bcConfig[bcType].Address(publicKey, chooseNetwork(bcNetwork))
 }
 
 //unsigned char *TrustSigner_getWBInitializeData(char *app_id);
@@ -39,7 +39,6 @@ func GetWBInitializeData(appId string) ([]byte, error) {
 	defer C.free(unsafe.Pointer(cUcharPtrResult))
 
 	return ptrToWhiteboxData(cUcharPtrResult)
-
 }
 
 func ptrToWhiteboxData(ptr *C.uchar) ([]byte, error) {

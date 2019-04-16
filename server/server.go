@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/sirupsen/logrus"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -22,31 +21,17 @@ import (
 
 var logger = logrus.WithField("module", "Server")
 
-type _config struct {
-	vaultAuthPath   string
-	jwtSecret       string
-	JwtExpires      int
-	questionExpires int
-	accessLogWriter io.Writer
-}
-
 type Instance struct {
-	config *_config
+	config *config.Configuration
 	vc     *vault.Client
 	ks     *whitebox.KeyStore
 }
 
 func NewInstance(cfg *config.Configuration, vaultClient *vault.Client, keyStore *whitebox.KeyStore) *Instance {
 	return &Instance{
-		config: &_config{
-			vaultAuthPath:   cfg.Vault.AuthPath,
-			jwtSecret:       cfg.Auth.JwtSecret,
-			JwtExpires:      cfg.Auth.JwtExpires,
-			questionExpires: cfg.Auth.QuestionExpires,
-			accessLogWriter: cfg.Log.GetAccessLogWriter(),
-		},
-		vc: vaultClient,
-		ks: keyStore,
+		config: cfg,
+		vc:     vaultClient,
+		ks:     keyStore,
 	}
 }
 
@@ -60,8 +45,11 @@ func (instance *Instance) Launch(port int) {
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	if instance.config.accessLogWriter != nil {
-		r.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{Logger: log.New(instance.config.accessLogWriter, "", log.LstdFlags), NoColor: false}))
+
+	accessLogWriter := instance.config.Server.GetAccessLogWriter()
+
+	if accessLogWriter != nil {
+		r.Use(middleware.RequestLogger(&middleware.DefaultLogFormatter{Logger: log.New(accessLogWriter, "", log.LstdFlags), NoColor: false}))
 	} else {
 		r.Use(middleware.Logger)
 	}
@@ -96,7 +84,7 @@ func (instance *Instance) Launch(port int) {
 		logger.Info(_ksd)
 	}
 
-	logger.Info("SignServer started : listen ", port)
+	logger.Info("SignServer ", instance.config.Server.BlockChainNetwork, " started : listen ", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), r)
 	util.CheckAndDie(err)
 }

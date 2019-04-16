@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 //var (
@@ -122,31 +120,31 @@ func FromBIP32ExtendedKey(data string) (*Wallet, error) {
 	return &Wallet{vbytes, depth, fingerprint, i, chaincode, key}, nil
 }
 
-func (w *Wallet) DeriveBTCAddress() (string, error) {
-	var netParam *chaincfg.Params
-	if bytes.Compare(w.Vbytes[:], chaincfg.TestNet3Params.HDPublicKeyID[:]) == 0 || bytes.Compare(w.Vbytes[:], chaincfg.TestNet3Params.HDPrivateKeyID[:]) == 0 {
-		netParam = &chaincfg.TestNet3Params
-	} else {
-		netParam = &chaincfg.MainNetParams
-	}
-
-	address, err := btcutil.NewAddressPubKey(w.Key, netParam)
-	if err != nil {
-		return "", err
-	} else {
-		return address.EncodeAddress(), nil
-	}
-}
-
-func (w *Wallet) DeriveETHAddress() (string, error) {
-	key, err := crypto.DecompressPubkey(w.Key)
-
-	if err != nil {
-		return "", err
-	}
-
-	return crypto.PubkeyToAddress(*key).Hex(), nil
-}
+//func (w *Wallet) DeriveBTCAddress() (string, error) {
+//	var netParam *chaincfg.Params
+//	if bytes.Compare(w.Vbytes[:], chaincfg.TestNet3Params.HDPublicKeyID[:]) == 0 || bytes.Compare(w.Vbytes[:], chaincfg.TestNet3Params.HDPrivateKeyID[:]) == 0 {
+//		netParam = &chaincfg.TestNet3Params
+//	} else {
+//		netParam = &chaincfg.MainNetParams
+//	}
+//
+//	address, err := btcutil.NewAddressPubKey(w.Key, netParam)
+//	if err != nil {
+//		return "", err
+//	} else {
+//		return address.EncodeAddress(), nil
+//	}
+//}
+//
+//func (w *Wallet) DeriveETHAddress() (string, error) {
+//	key, err := crypto.DecompressPubkey(w.Key)
+//
+//	if err != nil {
+//		return "", err
+//	}
+//
+//	return crypto.PubkeyToAddress(*key).Hex(), nil
+//}
 
 //
 //// Pub returns a new wallet which is the public key version of w.
