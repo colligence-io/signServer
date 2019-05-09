@@ -1,0 +1,21 @@
+{
+  "server": {
+    "log_path": "./log",
+    "log_access": "access.log",
+    "log_service": "service.log",
+    "bc_network": "testnet"
+  },
+  "auth": {
+    "jwtSecret": "JWTSECRET",
+    "jwtExpires": 600,
+    "questionExpires": 10
+  },
+  "vault": {
+    "username": "VAULT_USER",
+    "password": "VAULT_PASS",
+    "approle": "VAULT_ROLENAME",
+    "address": "http://127.0.0.1:8200",
+    "whiteboxPath": "tss/whitebox",
+    "authPath": "tss/auth"
+  }
+}

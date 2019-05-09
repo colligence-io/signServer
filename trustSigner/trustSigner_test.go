@@ -23,7 +23,7 @@ func TestTrustSigner(t *testing.T) {
 
 	wbData := trustSigner.ConvertToWhiteBox("test", data)
 
-	addresses := make(map[trustSigner.BlockChainType]string)
+	publicKeys := make(map[trustSigner.BlockChainType]string)
 
 	for k, v := range trustSigner.BCTypes {
 		publicKey, err := trustSigner.GetWBPublicKey(wbData, v)
@@ -31,9 +31,15 @@ func TestTrustSigner(t *testing.T) {
 			t.Fatal("ER : Public key :", err)
 		}
 
-		addresses[v] = publicKey
-
 		t.Log("OK : PublicKey for", k, ":", publicKey)
+
+		publicKeys[v] = publicKey
+
+		address, err := trustSigner.DeriveAddress(v, publicKey, "testnet")
+		if err != nil {
+			t.Fatal("ER : DeriveAddress :", err)
+		}
+		t.Log("OK : Address for", k, ":", address)
 
 		message := make([]byte, 32)
 
@@ -59,6 +65,7 @@ func TestTrustSigner(t *testing.T) {
 	if err != nil {
 		t.Fatal("ER : Recover whitebox failed", err)
 	} else {
+		t.Log("OK : Whitebox Recovered")
 
 		wbData := trustSigner.ConvertToWhiteBox("test", recoveredData)
 
@@ -68,7 +75,7 @@ func TestTrustSigner(t *testing.T) {
 				t.Fatal("ER : Public key :", err)
 			}
 
-			if addresses[v] == publicKey {
+			if publicKeys[v] == publicKey {
 				t.Log("OK : PublicKey for", k, "match")
 			} else {
 				t.Error("ER : PublicKey for", k, "not match", publicKey)
