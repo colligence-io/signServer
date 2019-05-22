@@ -15,11 +15,14 @@ import "C"
 import (
 	"bytes"
 	"errors"
+	"sync"
 	"unsafe"
 )
 
 const recoveryKeyLength int = 128
 const recoveryDataLength int = 1024
+
+var syncLock = &sync.Mutex{}
 
 type WhiteBox struct {
 	AppID   *C.char
@@ -32,6 +35,9 @@ func DeriveAddress(bcType BlockChainType, publicKey string, bcNetwork string) (s
 
 //unsigned char *TrustSigner_getWBInitializeData(char *app_id);
 func GetWBInitializeData(appId string) ([]byte, error) {
+	syncLock.Lock()
+	defer syncLock.Unlock()
+
 	cPtrCharAppID := C.CString(appId)
 	defer C.free(unsafe.Pointer(cPtrCharAppID))
 
@@ -66,6 +72,9 @@ func ConvertToWhiteBox(appID string, wbBytes []byte) *WhiteBox {
 
 //char *TrustSigner_getWBPublicKey(char *app_id, unsigned char *wb_data, char *coin_symbol, int hd_depth, int hd_change, int hd_index);
 func GetWBPublicKey(wb *WhiteBox, bcType BlockChainType) (string, error) {
+	syncLock.Lock()
+	defer syncLock.Unlock()
+
 	cPtrCharSymbol := C.CString(string(bcType))
 	defer C.free(unsafe.Pointer(cPtrCharSymbol))
 
@@ -83,17 +92,22 @@ func GetWBPublicKey(wb *WhiteBox, bcType BlockChainType) (string, error) {
 
 //unsigned char *TrustSigner_getWBSignatureData(char *app_id, unsigned char *wb_data, char *coin_symbol, int hd_depth, int hd_change, int hd_index, unsigned char *hash_message, int hash_len);
 func GetWBSignatureData(wb *WhiteBox, bcType BlockChainType, message []byte) ([]byte, error) {
+	syncLock.Lock()
+	defer syncLock.Unlock()
+
 	cPtrCharSymbol := C.CString(string(bcType))
 	defer C.free(unsafe.Pointer(cPtrCharSymbol))
 
 	var buf bytes.Buffer
 	buf.Write(message)
 
+	numMessage := len(message) / 32
+
 	cCharPtrResult := C.TrustSigner_getWBSignatureData(wb.AppID, wb.Pointer, cPtrCharSymbol, C.int(bcConfig[bcType].HDDepth), C.int(0), C.int(0), (*C.uchar)(unsafe.Pointer(&buf.Bytes()[0])), C.int(C.size_t(len(message))))
 	defer C.free(unsafe.Pointer(cCharPtrResult))
 
 	if cCharPtrResult != nil {
-		return C.GoBytes(unsafe.Pointer(cCharPtrResult), C.int(bcConfig[bcType].SignatureLength)), nil
+		return C.GoBytes(unsafe.Pointer(cCharPtrResult), C.int(bcConfig[bcType].SignatureLength*numMessage)), nil
 	} else {
 		return nil, errors.New("signing error")
 	}
@@ -102,6 +116,9 @@ func GetWBSignatureData(wb *WhiteBox, bcType BlockChainType, message []byte) ([]
 // BACKUP MODE IS NOT USING THIS FUNCTION
 //char *TrustSigner_getWBRecoveryData(char *app_id, unsigned char *wb_data, char *user_key, char *server_key);
 func GetWBRecoveryData(wb *WhiteBox, recoveryKey []byte) ([]byte, error) {
+	syncLock.Lock()
+	defer syncLock.Unlock()
+
 	if len(recoveryKey) != recoveryKeyLength {
 		return nil, errors.New("recovery key length must be 128")
 	}
@@ -134,6 +151,9 @@ func clen(n []byte) int {
 // RESTORING MODE IS NOT USING THIS FUNCTION
 //unsigned char *TrustSigner_setWBRecoveryData(char *app_id, char *user_key, char *recovery_data);
 func SetWBRecoveryData(appId string, recoveryKey []byte, recoveryData []byte) ([]byte, error) {
+	syncLock.Lock()
+	defer syncLock.Unlock()
+
 	if len(recoveryKey) != recoveryKeyLength {
 		return nil, errors.New("recovery key length must be 128")
 	}
