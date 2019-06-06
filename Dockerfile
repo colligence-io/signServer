@@ -1,5 +1,5 @@
 FROM ubuntu:bionic
-
+RUN sed -i.bak -re "s/([a-z]{2}.)?archive.ubuntu.com|security.ubuntu.com/mirror.kakao.com/g" /etc/apt/sources.list
 RUN apt-get update && apt-get install -y wget libntl-dev libboost-serialization-dev libboost-random-dev git build-essential gcc g++ make cmake
 
 WORKDIR /
