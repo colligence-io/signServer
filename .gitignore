@@ -7,3 +7,4 @@ etc/config.json.REMOVE
 etc/.config
 etc/.secret
 log
+tkn-tss.tgz
