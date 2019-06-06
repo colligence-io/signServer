@@ -58,12 +58,12 @@ func main() {
 		}
 
 		if mode == MODE_SERVER {
-			startUnlockServer(port)
+			startServer(port)
 		} else { // unlock
 			startUnlockClient(port)
 		}
 	} else {
-		cfg, e := config.GetConfig(config.ReadKeyFromStdin())
+		cfg, e := config.GetConfig(config.ReadLaunchingKey())
 		util.CheckAndDie(e)
 
 		_, wbks := initModule(cfg)

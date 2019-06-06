@@ -3,8 +3,7 @@
 .idea
 signServer
 go.sum
-config.json
-config.json.REMOVE
-.config
+etc/config.json.REMOVE
+etc/.config
+etc/.secret
 log
-logs

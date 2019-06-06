@@ -56,6 +56,28 @@ func (su *UnlockServiceRPC) Unlock(request UnlockRequest, response *UnlockRespon
 	return nil
 }
 
+func launchServer(cfg *config.Configuration, port int) {
+	// start signServer
+	log.Println("Launching SignServer")
+	vc, wbks := initModule(cfg)
+	ss := server.NewInstance(cfg, vc, wbks)
+	ss.Launch(port)
+}
+
+func startServer(port int) {
+	keyBytes := config.ReadLaunchingKeyFromSecret()
+	if keyBytes != nil {
+		cfg, e := config.GetConfig(keyBytes)
+		if e != nil {
+			log.Fatal("Unlock with secret failed :", e)
+		}
+
+		launchServer(cfg, port)
+	} else {
+		startUnlockServer(port)
+	}
+}
+
 func startUnlockServer(port int) {
 	su := &UnlockServiceRPC{
 		port:     port,
@@ -114,11 +136,7 @@ func startUnlockServer(port int) {
 	// waiting for unlock server shutdown finished ack
 	<-serverDown
 
-	// start signServer
-	log.Println("Launching SignServer")
-	vc, wbks := initModule(su.cfg)
-	ss := server.NewInstance(su.cfg, vc, wbks)
-	ss.Launch(su.port)
+	launchServer(su.cfg, su.port)
 }
 
 func startUnlockClient(port int) {
@@ -130,7 +148,7 @@ func startUnlockClient(port int) {
 		_ = client.Close()
 	}()
 
-	key := config.ReadKeyFromStdin()
+	key := config.ReadLaunchingKey()
 	var request = UnlockRequest{UnlockKey: key}
 	var response UnlockResponse
 

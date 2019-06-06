@@ -1,6 +1,6 @@
 {
   "server": {
-    "log_path": "./log",
+    "log_path": "/tss/log",
     "log_access": "access.log",
     "log_service": "service.log",
     "bc_network": "testnet"

@@ -14,9 +14,11 @@ import (
 	"strings"
 )
 
-const CONFIGFILE = ".config"
-const RAWCONFIGFILE = "config.json"
-const RAWCONFIGFILEREMOVE = "config.json.REMOVE"
+var ROOTPATH = setEnv("TSS_PATH", ".")
+var DOTCONFIGFILE = setEnv("TSS_CONFIGFILE", ROOTPATH+"/etc/.config")
+var RAWCONFIGFILE = setEnv("TSS_RAWCONFIGFILE", ROOTPATH+"/etc/config.json")
+var RAWCONFIGFILEREMOVE = setEnv("TSS_RAWCONFIGFILEREMOVE", ROOTPATH+"/etc/config.json.REMOVE")
+var SECRETFILE = setEnv("TSS_SECRETFILE", "/run/secrets/tssLaunchingKey")
 
 type Configuration struct {
 	Server ServerConfig `json:"server"`
@@ -46,11 +48,18 @@ type VaultConfig struct {
 	AuthPath     string `json:"authPath"`
 }
 
+func setEnv(envName string, defaultValue string) string {
+	if ev := os.Getenv(envName); ev != "" {
+		return ev
+	}
+	return defaultValue
+}
+
 func init() {
 	if util.File.Exists(RAWCONFIGFILE) {
 		fmt.Println("Initialize configuration")
 
-		key := ReadKeyFromStdin()
+		key := ReadLaunchingKey()
 
 		rcBytes, e := util.File.Read(RAWCONFIGFILE)
 		util.CheckAndDie(e)
@@ -58,22 +67,43 @@ func init() {
 		cBytes, e := util.Crypto.EncryptAES(key, rcBytes)
 		util.CheckAndDie(e)
 
-		if util.File.Exists(CONFIGFILE) {
-			fmt.Println(CONFIGFILE, "found, overwrite.")
+		if util.File.Exists(DOTCONFIGFILE) {
+			fmt.Println(DOTCONFIGFILE, "found, overwrite.")
 		}
 
-		e = ioutil.WriteFile(CONFIGFILE, cBytes, 0600)
+		e = ioutil.WriteFile(DOTCONFIGFILE, cBytes, 0600)
 		util.CheckAndDie(e)
 
 		e = os.Rename(RAWCONFIGFILE, RAWCONFIGFILEREMOVE)
 		util.CheckAndDie(e)
 
-		fmt.Println(CONFIGFILE, "created,", RAWCONFIGFILE, "renamed to", RAWCONFIGFILEREMOVE)
+		fmt.Println(DOTCONFIGFILE, "created,", RAWCONFIGFILE, "renamed to", RAWCONFIGFILEREMOVE)
 		os.Exit(0)
 	}
 }
 
-func ReadKeyFromStdin() []byte {
+func ReadLaunchingKeyFromSecret() []byte {
+	if util.File.Exists(SECRETFILE) {
+		keyBytes, e := util.File.Read(SECRETFILE)
+		util.CheckAndDie(e)
+		fmt.Println("Secret initialized")
+
+		keyString := strings.TrimRightFunc(string(keyBytes), func(c rune) bool {
+			return c == '\r' || c == '\n'
+		})
+
+		return util.Crypto.Sha256Hash(keyString)
+	} else {
+		return nil
+	}
+}
+
+func ReadLaunchingKey() []byte {
+	keyBytes := ReadLaunchingKeyFromSecret()
+	if keyBytes != nil {
+		return keyBytes
+	}
+
 	fmt.Print("Enter launching key : ")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
@@ -83,11 +113,11 @@ func ReadKeyFromStdin() []byte {
 }
 
 func GetConfig(key []byte) (*Configuration, error) {
-	if !util.File.Exists(CONFIGFILE) {
+	if !util.File.Exists(DOTCONFIGFILE) {
 		util.Die("config not found")
 	}
 
-	cBytes, e := util.File.Read(CONFIGFILE)
+	cBytes, e := util.File.Read(DOTCONFIGFILE)
 	if e != nil {
 		return nil, e
 	}
