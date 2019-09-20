@@ -20,6 +20,8 @@ RUN rm -rf /build
 
 ENV TSS_PATH /tss
 
+WORKDIR /tss
+
 EXPOSE 3456
 VOLUME ["/tss/log", "/tss/etc"]
 
