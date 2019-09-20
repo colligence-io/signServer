@@ -135,16 +135,19 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 
 	app, found := svc.authData.GetApp(request.AppName)
 	if !found {
-		return rr.UnauthorizedResponse
+		logger.Error("app " + request.AppName + " not found")
+		return rr.BadRequestResponse
 	}
 
 	// get remote ip
 	ip := util.GetIPFromAddress(req.RemoteAddr)
 	if ip == nil {
+		logger.Error("app " + request.AppName + " remote ip parsing error : " + req.RemoteAddr)
 		return rr.UnauthorizedResponse
 	}
 
 	if !app.CheckCIDR(ip) {
+		logger.Error("app " + request.AppName + " access denied from " + req.RemoteAddr)
 		return rr.UnauthorizedResponse
 	}
 
@@ -160,6 +163,7 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	})
 
 	if e != nil {
+		logger.Error(e)
 		return rr.ErrorResponse(e)
 	}
 
@@ -197,35 +201,45 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 
 	// validate request
 	if request.AppName == "" || request.Signature == "" {
-		return rr.UnauthorizedResponse
+		return rr.BadRequestResponse
 	}
 
 	// check app is present
 	app, found := svc.authData.GetApp(request.AppName)
 	if !found {
-		return rr.UnauthorizedResponse
+		logger.Error("app " + request.AppName + " not found")
+		return rr.BadRequestResponse
 	}
 
 	// get question (nil, false will be returned if expired)
 	question, found := svc.authData.GetQuestion(request.Question)
 	if !found {
+		logger.Error("question " + request.Question + " not found")
 		return rr.UnauthorizedResponse
 	}
 
 	// check appname with introducer
 	if question.AppName != request.AppName {
+		logger.Error("question " + request.Question + " is not for " + request.AppName)
 		return rr.UnauthorizedResponse
 	}
 
 	// get ip from request
 	ip := util.GetIPFromAddress(req.RemoteAddr)
 	if ip == nil {
+		logger.Error("app " + request.AppName + " remote ip parsing error : " + req.RemoteAddr)
+		return rr.UnauthorizedResponse
+	}
+
+	if !app.CheckCIDR(ip) {
+		logger.Error("app " + request.AppName + " access denied from " + req.RemoteAddr)
 		return rr.UnauthorizedResponse
 	}
 
 	// check ip with introducer
 	// FIXME : this may interfere proper handshake when introducer & answerer are different (even if both is proper)
 	if !question.RequestIP.Equal(ip) {
+		logger.Error("app " + request.AppName + " answered from different remote ip " + req.RemoteAddr)
 		return rr.UnauthorizedResponse
 	}
 
@@ -233,16 +247,19 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 
 	mBytes, e := base64.StdEncoding.DecodeString(request.Question)
 	if e != nil {
-		return rr.KoResponse(http.StatusBadRequest, "You are so bad.")
+		logger.Error("cannot decode question " + request.Question)
+		return rr.BadRequestResponse
 	}
 
 	sBytes, e := base64.StdEncoding.DecodeString(request.Signature)
 	if e != nil {
-		return rr.KoResponse(http.StatusBadRequest, "You are so bad.")
+		logger.Error("cannot decode signature " + request.Signature)
+		return rr.BadRequestResponse
 	}
 
 	// Verify returns nil of matched, otherwise error returned
 	if app.KeyPair.Verify(mBytes, sBytes) != nil {
+		logger.Error("login signature verification failed")
 		return rr.KoResponse(http.StatusNotAcceptable, "I don't like your answer.")
 	}
 
@@ -264,6 +281,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 		_, e := io.ReadFull(rand.Reader, kqBytes)
 
 		if e != nil {
+			logger.Error(e)
 			return rr.ErrorResponse(e)
 		}
 
@@ -271,6 +289,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 
 		keyAnswer, e := app.KeyPair.Sign(kqBytes)
 		if e != nil {
+			logger.Error(e)
 			return rr.ErrorResponse(e)
 		}
 
@@ -299,6 +318,7 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 	// sign JWT into JWS
 	jwsString, e := token.SignedString(svc.jwtSecretKey)
 	if e != nil {
+		logger.Error(e)
 		return rr.ErrorResponse(e)
 	}
 

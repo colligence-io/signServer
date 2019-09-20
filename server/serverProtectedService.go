@@ -69,33 +69,39 @@ func (svcp *ProtectedService) sign(session *auth.Session, req *http.Request) rr.
 
 	quiz, found := session.Quizzes[requestKey]
 	if !found {
-		return rr.KoResponse(http.StatusNotAcceptable, "")
+		logger.Error(session.AppName + "'s quiz " + requestKey + " not found")
+		return rr.BadRequestResponse
 	}
 
 	if request.RequestSignature != quiz.Answer {
-		return rr.KoResponse(http.StatusBadRequest, "")
+		logger.Error(session.AppName + "'s answer " + request.RequestSignature + " is wrong")
+		return rr.BadRequestResponse
 	}
 
 	// get data to sign
 	dataToSign, err := hex.DecodeString(request.Data)
 
 	if err != nil {
+		logger.Error(err)
 		return rr.ErrorResponse(err)
 	}
 
 	if len(dataToSign)%32 != 0 {
+		logger.Error("data length must be 32*N")
 		return rr.KoResponse(http.StatusBadRequest, "data length must be 32*N")
 	}
 
 	wb := svcp.instance.ks.GetWhiteBoxData(quiz.KeyID, request.Type)
 
 	if wb == nil {
-		return rr.KoResponse(http.StatusNotFound, "")
+		logger.Error("whitebox " + quiz.KeyID + " not found")
+		return rr.InternalServerErrorResponse
 	}
 
 	// sign message with trustSigner
 	signature, err := trustSigner.GetWBSignatureData(wb, request.Type, dataToSign)
 	if err != nil {
+		logger.Error(err)
 		return rr.ErrorResponse(err)
 	}
 

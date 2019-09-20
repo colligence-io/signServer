@@ -19,6 +19,8 @@ type ResponseEntity struct {
 
 var UnauthorizedResponse = KoResponse(http.StatusUnauthorized, "I don't know who you are")
 
+var BadRequestResponse = KoResponse(http.StatusBadRequest, "You are so bad")
+
 var InternalServerErrorResponse = KoResponse(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 
 func ErrorResponse(err error) ResponseEntity {
