@@ -3,6 +3,7 @@ package util
 import (
 	"github.com/sirupsen/logrus"
 	"io"
+	"net"
 )
 
 var (
@@ -28,4 +29,17 @@ func CheckAndPanic(err error) {
 
 func Die(message string) {
 	logrus.Fatalln(message)
+}
+
+// GetIPFromAddress returns net.IP from IP:PORT string
+func GetIPFromAddress(addr string) net.IP {
+	host, _, e := net.SplitHostPort(addr)
+	if e != nil {
+		return nil
+	}
+	if host != "" {
+		return net.ParseIP(host)
+	} else {
+		return net.ParseIP(addr)
+	}
 }

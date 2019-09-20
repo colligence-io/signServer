@@ -9,10 +9,7 @@ import (
 	"github.com/colligence-io/signServer/util"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/go-chi/jwtauth"
-	stellarkp "github.com/stellar/go/keypair"
-	"github.com/yl2chen/cidranger"
 	"io"
-	"net"
 	"net/http"
 	"time"
 )
@@ -22,7 +19,7 @@ type AuthService struct {
 	instance *Instance
 
 	// key = appName
-	authContainer *auth.Container
+	authData *auth.Data
 
 	// session ctx key
 	ctxSessionKey *struct{ name string }
@@ -47,7 +44,7 @@ func NewAuthService(instance *Instance) *AuthService {
 	tokenAuth := jwtauth.New("HS256", svc.jwtSecretKey, nil)
 	svc.jwtVerifier = jwtauth.Verifier(tokenAuth)
 
-	svc.authContainer = auth.New()
+	svc.authData = auth.New(instance.vc, instance.config.Vault.AuthPath)
 
 	return svc
 }
@@ -76,17 +73,17 @@ func (svc *AuthService) JwtAuthenticator(next http.Handler) http.Handler {
 			// get appname from subject claim
 			if appName, ok := claims["sub"].(string); ok {
 				// get app from auth container
-				if app, ok := svc.authContainer.GetApp(appName); ok {
+				if app, ok := svc.authData.GetApp(appName); ok {
 					// check remote addr CIDR match
 					if app.CheckStringCIDR(r.RemoteAddr) {
 						// get tokenID from jti claim
 						if tokenID, ok := claims["jti"].(string); ok {
-							// get session from auth container
-							if session, found := app.Sessions[tokenID]; found {
-								// check session expiration
-								if !session.IsExpired() {
+							// get session from auth container (will got nil if session is expired)
+							if session, found := svc.authData.GetSession(tokenID); found {
+								// check session is owned by requested app
+								if session.AppName == appName {
 									authed = true
-									ctx = context.WithValue(ctx, svc.ctxSessionKey, &session)
+									ctx = context.WithValue(ctx, svc.ctxSessionKey, session)
 								}
 							}
 						}
@@ -136,58 +133,13 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	app, found := svc.authContainer.GetApp(request.AppName)
+	app, found := svc.authData.GetApp(request.AppName)
 	if !found {
-		// Get appAuth secret from vault
-		appAuthSecret, e := svc.instance.vc.Logical().Read(svc.instance.config.Vault.AuthPath + "/" + request.AppName)
-		if appAuthSecret == nil || e != nil {
-			return rr.UnauthorizedResponse
-		}
-
-		if appAuthSecret.Data == nil {
-			logger.Error("Broken AppAuth : Data is null - ", request.AppName)
-			return rr.UnauthorizedResponse
-		}
-
-		// get bind_cidr
-		cidr, ok := appAuthSecret.Data["bind_cidr"].(string)
-		if !ok {
-			logger.Error("Broken AppAuth : CIDR not found - ", request.AppName)
-			return rr.UnauthorizedResponse
-		}
-
-		ranger := cidranger.NewPCTrieRanger()
-		_, network1, e := net.ParseCIDR(cidr)
-
-		e = ranger.Insert(cidranger.NewBasicRangerEntry(*network1))
-		if e != nil {
-			logger.Error("Broken AppAuth : CIDR parse error - ", request.AppName)
-			return rr.UnauthorizedResponse
-		}
-
-		// get privateKey for app
-		// NOTE : publicKey is assumed to be pair with private key
-		// maybe assertion needed for make sure
-		privateKey, ok := appAuthSecret.Data["privateKey"].(string)
-		if !ok {
-			logger.Error("Broken AppAuth : privateKey not found - ", request.AppName)
-			return rr.UnauthorizedResponse
-		}
-
-		kp, e := stellarkp.Parse(privateKey)
-		if e != nil {
-			logger.Error("Broken AppAuth : privateKey parse error - ", request.AppName)
-			return rr.UnauthorizedResponse
-		}
-
-		app = svc.authContainer.NewApp(request.AppName)
-
-		app.KeyPair = kp
-		app.CIDRChecker = ranger
+		return rr.UnauthorizedResponse
 	}
 
 	// get remote ip
-	ip := auth.GetIPFromAddress(req.RemoteAddr)
+	ip := util.GetIPFromAddress(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
@@ -199,26 +151,23 @@ func (svc *AuthService) introduce(req *http.Request) rr.ResponseEntity {
 	// OK, seems proper access
 	logger.Info("introduce from ", req.RemoteAddr, " by ", request.AppName)
 
-	// generate random question
-	qbytes := make([]byte, 32)
-	_, e := io.ReadFull(rand.Reader, qbytes)
+	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.QuestionExpires))
+
+	questionId, e := svc.authData.CreateQuestion(auth.Question{
+		AppName:   request.AppName,
+		Expires:   expires,
+		RequestIP: ip,
+	})
+
 	if e != nil {
 		return rr.ErrorResponse(e)
 	}
 
-	tokenID := base64.StdEncoding.EncodeToString(qbytes)
-
-	question := auth.Question{}
-	question.Expires = time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.QuestionExpires))
-	question.RequestIP = ip
-
-	app.Questions[tokenID] = question
-
 	// OK, send question
 	logger.Info("sending question to ", request.AppName)
 
-	response.Question = tokenID
-	response.Expires = question.Expires.Unix()
+	response.Question = questionId
+	response.Expires = expires.Unix()
 
 	return rr.OkResponse(response)
 }
@@ -251,34 +200,36 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 		return rr.UnauthorizedResponse
 	}
 
-	// search session
-	app, found := svc.authContainer.GetApp(request.AppName)
+	// check app is present
+	app, found := svc.authData.GetApp(request.AppName)
 	if !found {
 		return rr.UnauthorizedResponse
 	}
 
-	question, found := app.Questions[request.Question]
+	// get question (nil, false will be returned if expired)
+	question, found := svc.authData.GetQuestion(request.Question)
 	if !found {
 		return rr.UnauthorizedResponse
 	}
 
-	ip := auth.GetIPFromAddress(req.RemoteAddr)
+	// check appname with introducer
+	if question.AppName != request.AppName {
+		return rr.UnauthorizedResponse
+	}
+
+	// get ip from request
+	ip := util.GetIPFromAddress(req.RemoteAddr)
 	if ip == nil {
 		return rr.UnauthorizedResponse
 	}
 
+	// check ip with introducer
 	// FIXME : this may interfere proper handshake when introducer & answerer are different (even if both is proper)
-	// this can be changed for CIDR check
 	if !question.RequestIP.Equal(ip) {
 		return rr.UnauthorizedResponse
 	}
 
 	logger.Info("answer from ", req.RemoteAddr, " by ", request.AppName)
-
-	// check expiration
-	if question.IsExpired() {
-		return rr.KoResponse(http.StatusGone, "I forgot question. duh.")
-	}
 
 	mBytes, e := base64.StdEncoding.DecodeString(request.Question)
 	if e != nil {
@@ -297,32 +248,14 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 
 	// Answer Verified ///////////////////////////////////////////////////////////
 
-	// use question hex string as jti
-	tokenID := request.Question
-
-	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.JwtExpires))
-
-	// build JWT
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{
-		Id:        tokenID,
-		Subject:   request.AppName,
-		IssuedAt:  time.Now().UTC().Unix(),
-		ExpiresAt: expires.Unix(),
-	})
-
-	// sign JWT into JWS
-	jwsString, e := token.SignedString(svc.jwtSecretKey)
-	if e != nil {
-		return rr.ErrorResponse(e)
-	}
-
+	// build quizzes for session
 	// get keyID / type:address map
 	keymap, e := svc.instance.ks.GetKeyMap()
 
-	// welcomePackage
+	// welcomePackage (addrString:question)
 	welcomePackage := make(map[string]string)
 
-	// quiz map stored in session
+	// quiz map stored in session (addrString:Quiz{question, answer, keyID})
 	sessionQuizMap := make(map[string]auth.Quiz)
 
 	for keyID, addrString := range keymap {
@@ -349,13 +282,33 @@ func (svc *AuthService) answer(req *http.Request) rr.ResponseEntity {
 			KeyID:    keyID,
 		}
 	}
-	// build session
-	app.Sessions[tokenID] = auth.Session{
+
+	// use question hex string as jti
+	tokenID := request.Question
+
+	expires := time.Now().UTC().Add(time.Second * time.Duration(svc.instance.config.Auth.JwtExpires))
+
+	// build JWT
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.StandardClaims{
+		Id:        tokenID,
+		Subject:   request.AppName,
+		IssuedAt:  time.Now().UTC().Unix(),
+		ExpiresAt: expires.Unix(),
+	})
+
+	// sign JWT into JWS
+	jwsString, e := token.SignedString(svc.jwtSecretKey)
+	if e != nil {
+		return rr.ErrorResponse(e)
+	}
+
+	// store session
+	svc.authData.CreateSession(tokenID, auth.Session{
 		JWS:     jwsString,
 		AppName: request.AppName,
 		Quizzes: sessionQuizMap,
 		Expires: expires,
-	}
+	})
 
 	// OK, send token
 	logger.Info("sending welcome present to ", request.AppName)
